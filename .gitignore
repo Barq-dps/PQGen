@@ -1,0 +1,5 @@
+/backend/venv
+/backend/uploads
+frontend/static/css/frontend_with_auth_and_gamification.css
+frontend/static/js/firebase_auth_and_gamification.js
+backend/firebase_service_account.json

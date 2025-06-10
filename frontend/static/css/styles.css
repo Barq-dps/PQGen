@@ -1,0 +1,278 @@
+/* Base Styles */
+:root {
+    --primary-color: #4a6fa5;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --warning-color: #ffc107;
+    --light-color: #f8f9fa;
+    --dark-color: #343a40;
+    --border-radius: 4px;
+    --box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    --transition: all 0.3s ease;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f4f7fa;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Header Styles */
+header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+header h1 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+}
+
+/* Card Styles */
+.card {
+    background-color: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Form Styles */
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+input[type="file"] {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: var(--border-radius);
+}
+
+/* Button Styles */
+.btn {
+    display: inline-block;
+    padding: 8px 16px;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-weight: 600;
+    transition: var(--transition);
+    text-align: center;
+}
+
+.primary-btn {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.primary-btn:hover {
+    background-color: #3a5a8c;
+}
+
+.secondary-btn {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+.secondary-btn:hover {
+    background-color: #5a6268;
+}
+
+.hint-btn {
+    background-color: var(--warning-color);
+    color: #333;
+}
+
+.hint-btn:hover {
+    background-color: #e0a800;
+}
+
+/* Challenge List Styles */
+.challenge-list-item {
+    border: 1px solid #ddd;
+    border-radius: var(--border-radius);
+    padding: 15px;
+    margin-bottom: 15px;
+    transition: var(--transition);
+}
+
+.challenge-list-item:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.challenge-list-item h4 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+}
+
+.view-challenge-btn {
+    margin-top: 10px;
+}
+
+/* Challenge Detail Styles */
+#challenge-navigation {
+    margin-bottom: 20px;
+}
+
+#challenge-title {
+    color: var(--primary-color);
+    margin-bottom: 15px;
+}
+
+#challenge-description {
+    margin-bottom: 20px;
+}
+
+/* MCQ Styles */
+#mcq-options-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.option-btn {
+    text-align: left;
+    padding: 10px 15px;
+    background-color: #f1f1f1;
+    border: 1px solid #ddd;
+    border-radius: var(--border-radius);
+    transition: var(--transition);
+}
+
+.option-btn:hover:not([disabled]) {
+    background-color: #e9e9e9;
+}
+
+.option-btn.correct {
+    background-color: var(--success-color);
+    color: white;
+}
+
+.option-btn.incorrect {
+    background-color: var(--danger-color);
+    color: white;
+}
+
+.option-btn.correct-answer-reveal {
+    background-color: rgba(40, 167, 69, 0.7);
+    color: white;
+}
+
+.option-btn.disabled-hint {
+    opacity: 0.5;
+    background-color: #ccc;
+}
+
+/* Code Editor Styles */
+pre {
+    background-color: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: var(--border-radius);
+    padding: 15px;
+    overflow-x: auto;
+    margin-bottom: 15px;
+}
+
+code {
+    font-family: 'Courier New', Courier, monospace;
+    white-space: pre-wrap;
+}
+
+textarea {
+    width: 100%;
+    min-height: 200px;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: var(--border-radius);
+    font-family: 'Courier New', Courier, monospace;
+    resize: vertical;
+    margin-bottom: 15px;
+}
+
+/* Evaluation Result Styles */
+#evaluation-result {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #ddd;
+}
+
+.status-correct {
+    color: var(--success-color);
+    font-weight: bold;
+}
+
+.status-incorrect {
+    color: var(--danger-color);
+    font-weight: bold;
+}
+
+.status-error {
+    color: var(--danger-color);
+    font-weight: bold;
+}
+
+/* Utility Classes */
+.hidden {
+    display: none;
+}
+
+.status-container {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: var(--border-radius);
+    background-color: #f8f9fa;
+}
+
+/* Loading Spinner */
+.spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    border-top-color: var(--primary-color);
+    animation: spin 1s ease-in-out infinite;
+    margin-right: 10px;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Responsive Styles */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .card {
+        padding: 15px;
+    }
+    
+    #mcq-options-container {
+        gap: 8px;
+    }
+}
