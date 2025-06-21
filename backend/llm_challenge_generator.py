@@ -137,11 +137,7 @@ def extract_json_blocks(text: str) -> list[str]:
 
 
 def normalize_mc(parsed: dict) -> dict | None:
-    """Normalize multiple choice question format and ensure correct answer is marked.
-    
-    This function handles different formats of multiple choice questions and ensures
-    that the correct answer is properly marked with a correct_index.
-    """
+    """Normalize multiple choice question format and ensure correct answer is marked."""
     # Case 1: Standard format with options as strings and correct_index
     if ('options' in parsed and isinstance(parsed['options'], list) and 
             all(isinstance(o, str) for o in parsed['options']) and
@@ -411,43 +407,39 @@ def parse_llm_response(response: str, default=None) -> dict | None:
                 return raw
     except json.JSONDecodeError:
         pass
-        
+    
+    logger.warning(f"Failed to parse LLM response: {response[:200]}...")
     return default
 
 
-def create_multiple_choice_prompt(topic: str, topic_text: str, difficulty: str) -> str:
-    """Create a prompt for generating a multiple choice question with the specified difficulty.
+def create_multiple_choice_prompt(topic: str, topic_text: str, difficulty: str, language: str = "python") -> str:
+    """Create a prompt for generating a multiple choice question with the specified difficulty."""
     
-    Args:
-        topic: The topic to generate a question about
-        topic_text: Text content related to the topic
-        difficulty: Difficulty level - "easy", "medium", or "hard"
-        
-    Returns:
-        A prompt string for the LLM
-    """
     # Define difficulty-specific guidance
     difficulty_guidance = {
         "easy": (
             "For EASY difficulty:\n"
-            "- Question should test basic understanding and recall\n"
-            "- Use straightforward language and clear options\n"
-            "- Focus on fundamental concepts that beginners would know\n"
-            "- Distractors should be clearly incorrect to someone with basic knowledge\n"
+            "- Focus on basic concepts and definitions\n"
+            "- Use straightforward language and clear examples\n"
+            "- Make the correct answer obvious to someone who understands the basics\n"
+            "- Include distractors that are clearly wrong to knowledgeable users\n"
+            "- Provide a helpful hint that guides toward the correct answer\n"
         ),
         "medium": (
             "For MEDIUM difficulty:\n"
-            "- Question should test application of knowledge\n"
-            "- Include some nuance or detail that requires deeper understanding\n"
-            "- Focus on practical applications or common use cases\n"
-            "- Distractors should be plausible but have clear flaws\n"
+            "- Focus on practical application and understanding\n"
+            "- Require knowledge of how concepts work together\n"
+            "- Make distractors plausible but incorrect\n"
+            "- Test understanding rather than just memorization\n"
+            "- Provide a hint that points to the relevant concept\n"
         ),
         "hard": (
             "For HARD difficulty:\n"
-            "- Question should test analysis, evaluation, or edge cases\n"
-            "- Include complex scenarios or advanced concepts\n"
-            "- Focus on optimization, best practices, or uncommon use cases\n"
-            "- Distractors should be very plausible and require careful analysis to reject\n"
+            "- Focus on edge cases, advanced concepts, or subtle distinctions\n"
+            "- Require deep understanding and critical thinking\n"
+            "- Make distractors very plausible and require careful analysis\n"
+            "- Test advanced knowledge and problem-solving skills\n"
+            "- Provide a subtle hint that requires analysis to apply\n"
         )
     }
     
@@ -459,7 +451,7 @@ def create_multiple_choice_prompt(topic: str, topic_text: str, difficulty: str) 
         f"You are a JSON-generating API that creates programming challenges. You must output ONLY valid JSON with NO additional text.\n"
         f"</s>\n\n"
         f"<TASK>\n"
-        f"Generate a multiple-choice programming question about {topic} at {difficulty} difficulty.\n"
+        f"Generate a multiple choice question about {topic} in {language} at {difficulty} difficulty.\n"
         f"{guidance}\n"
         f"</TASK>\n\n"
         f"<CONTEXT>\n{topic_text[:500]}\n</CONTEXT>\n\n"
@@ -474,9 +466,9 @@ def create_multiple_choice_prompt(topic: str, topic_text: str, difficulty: str) 
         "<JSON_SCHEMA>\n"
         "{\n"
         '  "question": "A clear, specific question about the topic",\n'
-        '  "options": ["Option 1", "Option 2", "Option 3", "Option 4"],\n'
+        '  "options": ["Option A", "Option B", "Option C", "Option D"],\n'
         '  "correct_index": 0,\n'
-        '  "explanation": "Explanation of why the answer is correct"\n'
+        '  "hint": "A helpful hint for solving the question"\n'
         "}\n"
         "</JSON_SCHEMA>\n\n"
         "Output the JSON object now:"
@@ -484,17 +476,8 @@ def create_multiple_choice_prompt(topic: str, topic_text: str, difficulty: str) 
 
 
 def create_debugging_prompt(topic: str, topic_text: str, difficulty: str, language: str = "python") -> str:
-    """Create a prompt for generating a debugging challenge with the specified difficulty.
+    """Create a prompt for generating a debugging challenge with the specified difficulty."""
     
-    Args:
-        topic: The topic to generate a challenge about
-        topic_text: Text content related to the topic
-        difficulty: Difficulty level - "easy", "medium", or "hard"
-        language: Programming language for the challenge
-        
-    Returns:
-        A prompt string for the LLM
-    """
     # Define difficulty-specific guidance
     difficulty_guidance = {
         "easy": (
@@ -557,17 +540,8 @@ def create_debugging_prompt(topic: str, topic_text: str, difficulty: str, langua
 
 
 def create_coding_prompt(topic: str, topic_text: str, difficulty: str, language: str = "python") -> str:
-    """Create a prompt for generating a coding challenge with the specified difficulty.
+    """Create a prompt for generating a coding challenge with the specified difficulty."""
     
-    Args:
-        topic: The topic to generate a challenge about
-        topic_text: Text content related to the topic
-        difficulty: Difficulty level - "easy", "medium", or "hard"
-        language: Programming language for the challenge
-        
-    Returns:
-        A prompt string for the LLM
-    """
     # Define difficulty-specific guidance
     difficulty_guidance = {
         "easy": (
@@ -622,31 +596,19 @@ def create_coding_prompt(topic: str, topic_text: str, difficulty: str, language:
         "</OUTPUT_REQUIREMENTS>\n\n"
         "<JSON_SCHEMA>\n"
         "{\n"
-        '  "question": "A clear description of the coding task",\n'
-        '  "code_stub": "def solution(input):\\n    # Your code here\\n    pass",\n'
-        '  "test_cases": [\n'
-        '    {"input": "test input 1", "expected": "expected output 1"},\n'
-        '    {"input": "test input 2", "expected": "expected output 2"}\n'
-        '  ],\n'
-        '  "hint": "A hint to help solve the problem"\n'
+        '  "question": "A clear problem description",\n'
+        '  "code_stub": "def solution():\\n    # Your code here\\n    pass",\n'
+        '  "test_cases": [{"input": "example input", "expected": "expected output"}],\n'
+        '  "hint": "A helpful hint for solving the problem"\n'
         "}\n"
         "</JSON_SCHEMA>\n\n"
         "Output the JSON object now:"
     )
 
 
-def generate_multiple_choice(topic: str, topic_text: str, difficulty: str) -> dict | None:
-    """Generate a multiple choice question using the LLM.
-    
-    Args:
-        topic: The topic to generate a question about
-        topic_text: Text content related to the topic
-        difficulty: Difficulty level - "easy", "medium", or "hard"
-        
-    Returns:
-        A dictionary containing the multiple choice question, or None if generation failed
-    """
-    prompt = create_multiple_choice_prompt(topic, topic_text, difficulty)
+def generate_multiple_choice(topic: str, topic_text: str, difficulty: str, language: str = "python") -> dict | None:
+    """Generate a multiple choice question using the LLM with specified difficulty."""
+    prompt = create_multiple_choice_prompt(topic, topic_text, difficulty, language)
     resp = generate_with_llm(prompt)
     parsed = parse_llm_response(resp, {})
     
@@ -654,47 +616,40 @@ def generate_multiple_choice(topic: str, topic_text: str, difficulty: str) -> di
         logger.warning(f"Invalid multiple choice JSON: {parsed}")
         return None
     
-    # Ensure we have a correct_index
-    if "correct_index" not in parsed:
-        # Default to first option if no correct index is found
-        parsed["correct_index"] = 0
-        logger.warning(f"No correct_index found in multiple choice response, defaulting to 0")
+    # Normalize the multiple choice format
+    mc = normalize_mc(parsed)
+    if not mc:
+        logger.warning(f"Failed to normalize multiple choice format: {parsed}")
+        return None
     
-    # Validate correct_index is within bounds
-    if parsed["correct_index"] < 0 or parsed["correct_index"] >= len(parsed["options"]):
-        logger.warning(f"Correct index {parsed['correct_index']} out of bounds, defaulting to 0")
-        parsed["correct_index"] = 0
+    # Validate option count based on difficulty
+    option_count = len(mc["options"])
+    if option_count < 3:
+        logger.warning(f"Too few options for multiple choice: {option_count}")
+        # Add default options if needed
+        while len(mc["options"]) < 4:
+            mc["options"].append(f"Option {len(mc['options']) + 1}")
     
-    # Get hint from explanation or generate fallback
-    hint = parsed.get("explanation", "")
+    # Get hint or generate fallback
+    hint = mc.get("hint", mc.get("explanation", ""))
     if not hint or len(hint.strip()) < 10:  # Check if hint is empty or too short
-        logger.info(f"Generating fallback hint for multiple choice question about {topic}")
-        hint = generate_fallback_hint_for_multiple_choice(topic, difficulty)
+        logger.info(f"Generating fallback hint for multiple choice about {topic}")
+        hint = generate_fallback_hint_for_multiple_choice(topic, difficulty, mc["question"])
     
     return {
         "id": str(uuid.uuid4()),
         "topic": topic,
-        "type": "multiple_choice",
-        "question": parsed["question"],
-        "options": parsed["options"],
-        "correct_index": parsed["correct_index"],
+        "type": "multiple-choice",
+        "question": mc["question"],
+        "options": mc["options"],
+        "correct_index": mc["correct_index"],
         "hint": hint,
         "difficulty": difficulty
     }
 
 
 def generate_debugging(topic: str, topic_text: str, difficulty: str, language: str = "python") -> dict | None:
-    """Generate a debugging challenge using the LLM.
-    
-    Args:
-        topic: The topic to generate a challenge about
-        topic_text: Text content related to the topic
-        difficulty: Difficulty level - "easy", "medium", or "hard"
-        language: Programming language for the challenge
-        
-    Returns:
-        A dictionary containing the debugging challenge, or None if generation failed
-    """
+    """Generate a debugging challenge using the LLM with specified difficulty."""
     prompt = create_debugging_prompt(topic, topic_text, difficulty, language)
     resp = generate_with_llm(prompt)
     parsed = parse_llm_response(resp, {})
@@ -746,17 +701,7 @@ def generate_debugging(topic: str, topic_text: str, difficulty: str, language: s
 
 
 def generate_coding(topic: str, topic_text: str, difficulty: str, language: str = "python") -> dict | None:
-    """Generate a coding challenge using the LLM.
-    
-    Args:
-        topic: The topic to generate a challenge about
-        topic_text: Text content related to the topic
-        difficulty: Difficulty level - "easy", "medium", or "hard"
-        language: Programming language for the challenge
-        
-    Returns:
-        A dictionary containing the coding challenge, or None if generation failed
-    """
+    """Generate a coding challenge using the LLM with specified difficulty."""
     prompt = create_coding_prompt(topic, topic_text, difficulty, language)
     resp = generate_with_llm(prompt)
     parsed = parse_llm_response(resp, {})
@@ -798,15 +743,12 @@ def generate_coding(topic: str, topic_text: str, difficulty: str, language: str 
     
     if test_case_count < min_test_cases:
         logger.warning(f"Too few test cases for {difficulty} difficulty: {test_case_count} test cases")
-        # Add additional test cases if needed
-        while len(parsed["test_cases"]) < min_test_cases:
-            parsed["test_cases"].append({"input": "additional test case", "expected": "expected output"})
     
     # Get hint or generate fallback
     hint = parsed.get("hint", "")
     if not hint or len(hint.strip()) < 10:  # Check if hint is empty or too short
         logger.info(f"Generating fallback hint for coding challenge about {topic}")
-        hint = generate_fallback_hint_for_coding(topic, difficulty, parsed["code_stub"])
+        hint = generate_fallback_hint_for_coding(topic, difficulty, parsed["question"])
     
     return {
         "id": str(uuid.uuid4()),
@@ -821,18 +763,38 @@ def generate_coding(topic: str, topic_text: str, difficulty: str, language: str 
 
 
 def generate_challenge_with_llm(topic: str, topic_text: str, challenge_type: str, difficulty: str = "medium") -> dict | None:
+    """
+    Generate a programming challenge using the LLM with the specified difficulty.
+    
+    Args:
+        topic: The topic to generate a challenge about
+        topic_text: Text content related to the topic
+        challenge_type: Type of challenge ("multiple_choice", "debugging", "coding")
+        difficulty: Difficulty level ("easy", "medium", "hard")
+        
+    Returns:
+        A dictionary containing the challenge, or None if generation failed
+    """
+    logger.info(f"Generating {challenge_type} challenge for topic '{topic}' at {difficulty} difficulty")
+    
     if not is_model_ready():
+        logger.warning("Model not ready, loading in background")
         load_model_in_background()
         return None
+        
     if challenge_type == "multiple_choice":
         return generate_multiple_choice(topic, topic_text, difficulty)
-    if challenge_type == "debugging":
+    elif challenge_type == "debugging":
         return generate_debugging(topic, topic_text, difficulty)
-    if challenge_type == "coding":
+    elif challenge_type == "coding":
         return generate_coding(topic, topic_text, difficulty)
-    logger.warning(f"Unknown challenge type: {challenge_type}")
-    return None
+    else:
+        logger.warning(f"Unknown challenge type: {challenge_type}")
+        return None
+
 
 # Load model when running under Flask
 if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    logger.info("Flask detected, starting model loading in background")
     load_model_in_background()
+

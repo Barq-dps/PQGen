@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PQGen - Programming Challenge Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Open+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <span class="logo-icon">⚡</span>
+                <span class="logo-text">PQGen</span>
+            </div>
+            <div class="nav-links">
+                <a href="#home" class="nav-link active">Home</a>
+                <a href="#challenges" class="nav-link">Challenges</a>
+                <button id="theme-toggle" class="theme-toggle">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Home Section -->
+        <section id="home" class="section active">
+            <div class="hero">
+                <h1 class="hero-title">Welcome to PQGen</h1>
+                <p class="hero-subtitle">Generate programming challenges from your PDF documents</p>
+                <button class="cta-button" onclick="showSection('challenges')">Get Started</button>
+            </div>
+        </section>
+
+        <!-- Challenges Section -->
+        <section id="challenges" class="section">
+            <div class="container">
+                <h2 class="section-title">Programming Challenges</h2>
+                
+                <!-- Upload Area -->
+                <div class="upload-section">
+                    <div class="upload-card">
+                        <h3>Upload PDF Document</h3>
+                        <div class="upload-zone" id="upload-zone">
+                            <div class="upload-content">
+                                <div class="upload-icon">📄</div>
+                                <p>Drag & drop your PDF here or click to browse</p>
+                                <input type="file" id="file-input" accept=".pdf" hidden>
+                            </div>
+                        </div>
+                        
+                        <div class="difficulty-selector">
+                            <label>Difficulty Level:</label>
+                            <select id="difficulty-select">
+                                <option value="easy">Easy</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </div>
+                        
+                        <button id="generate-btn" class="generate-button" disabled>Generate Challenges</button>
+                        
+                        <div id="upload-status" class="upload-status hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Challenges Grid -->
+                <div class="challenges-section">
+                    <div class="filters">
+                        <div class="filter-group">
+                            <label>Type:</label>
+                            <div class="filter-checkboxes">
+                                <label><input type="checkbox" value="multiple-choice" checked> Multiple Choice</label>
+                                <label><input type="checkbox" value="debugging" checked> Debugging</label>
+                                <label><input type="checkbox" value="coding" checked> Coding</label>
+                            </div>
+                        </div>
+                        <div class="filter-group">
+                            <label>Search:</label>
+                            <input type="text" id="search-input" placeholder="Search challenges...">
+                        </div>
+                    </div>
+                    
+                    <div id="challenges-grid" class="challenges-grid">
+                        <div class="no-challenges">
+                            <p>No challenges available. Upload a PDF to generate challenges.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Challenge Modal -->
+    <div id="challenge-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Challenge Title</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="modal-challenge-content"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="submit-answer" class="submit-button">Submit Answer</button>
+                <button onclick="closeModal()" class="cancel-button">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-spinner"></div>
+        <p>Processing your document...</p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
