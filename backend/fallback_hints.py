@@ -112,7 +112,7 @@ def generate_fallback_hint_for_debugging(topic: str, difficulty: str, code: str)
     return random.choice(all_hints)
 
 
-def generate_fallback_hint_for_coding(topic: str, difficulty: str, code_stub: str) -> str:
+def generate_fallback_hint_for_fib(topic: str, difficulty: str, code_stub: str) -> str:
     """Generate a fallback hint for coding challenges.
     
     Args:

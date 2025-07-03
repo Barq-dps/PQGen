@@ -1,817 +1,549 @@
-import json
 import re
 import uuid
 import time
 import random
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Dict, Any
+
+# Import fallback hint generator
+from fallback_hints import (
+    generate_fallback_hint_for_multiple_choice,
+    generate_fallback_hint_for_debugging,
+    generate_fallback_hint_for_fib
+)
+
 import logging
+logger = logging.getLogger(__name__)
 
-# Import the LLM-based challenge generator
-try:
-    from llm_challenge_generator import (
-        generate_challenge_with_llm, 
-        is_model_ready, 
-        load_model_in_background
-    )
-    LLM_AVAILABLE = True
-except ImportError:
-    LLM_AVAILABLE = False
-    logging.warning("LLM challenge generator not available. Using template-based generation only.")
 
-# Add the missing function that app.py is trying to import
-def generate_challenges_for_topics(pdf_content, max_challenges_per_topic=None, difficulty="medium"):
-    """
-    Generate programming challenges based on PDF content with specified difficulty.
-    This is the main entry function that app.py imports.
+def generate_fallback_challenges(topics: List[str], difficulty: str = "medium") -> List[Dict[str, Any]]:
+    """Generate exactly 2 challenges of each type using static templates for specific topics"""
     
-    Args:
-        pdf_content (dict or list): Structured content from the PDF or list of topics
-        max_challenges_per_topic (int or str, optional): Maximum number of challenges per topic
-        difficulty (str, optional): Difficulty level - "easy", "medium", or "hard"
-        
-    Returns:
-        list: Generated challenges
-    """
-    # Handle different input types
-    if pdf_content is None:
+    logger.info(f"Generating fallback challenges for topics: {topics}")
+    
+    # Use provided topics instead of extracting from content
+    if not topics:
+        logger.warning("No topics provided for fallback challenge generation")
         return []
     
-    # Convert max_challenges_per_topic to int if it's a string
-    if max_challenges_per_topic is not None:
-        try:
-            max_challenges_per_topic = int(max_challenges_per_topic)
-        except (ValueError, TypeError):
-            max_challenges_per_topic = None
-        
-    # If pdf_content is a list, convert it to the expected dict format
-    if isinstance(pdf_content, list):
-        # Create a structured dict with the list as topics
-        structured_content = {
-            'topics': pdf_content,
-            'text': '',
-            'topic_sections': [],
-            'topic_code_blocks': {},
-            'topic_key_concepts': {}
-        }
-        pdf_content = structured_content
+    challenges = []
+    challenge_types = ['multiple-choice', 'fill-in-the-blank', 'debugging']
     
-    # Ensure pdf_content is a dict with a 'topics' key
-    if not isinstance(pdf_content, dict):
-        return []
-    
-    # If 'topics' is missing, try to extract it from other keys
-    if 'topics' not in pdf_content:
-        # Try to find topics in other possible keys
-        for key in ['topic_sections', 'sections', 'headings']:
-            if key in pdf_content and pdf_content[key]:
-                pdf_content['topics'] = [section.get('title', 'Unknown Topic') 
-                                        for section in pdf_content[key]]
-                break
-        
-        # If still no topics, return empty list
-        if 'topics' not in pdf_content:
-            return []
-    
-    # Start loading the LLM model in the background if available
-    if LLM_AVAILABLE:
-        load_model_in_background()
-    
-    generator = ChallengeGenerator()
-    return generator.generate_challenges(pdf_content, max_challenges_per_topic, difficulty)
-
-class ChallengeGenerator:
-    """
-    Enhanced Challenge Generator with difficulty selection and dynamic prompt generation.
-    Generates programming challenges based on PDF content with adjustable difficulty levels.
-    """
-    
-    def __init__(self, llm=None):
-        """Initialize the Challenge Generator."""
-        self.llm = llm
-        
-        # Define challenge types and their templates
-        self.challenge_types = {
-            "multiple_choice": {
-                "prefix": "MULTIPLE CHOICE QUESTION:",
-                "template": self._get_multiple_choice_template()
-            },
-            "debugging": {
-                "prefix": "DEBUGGING CHALLENGE:",
-                "template": self._get_debugging_template()
-            },
-            "coding": {
-                "prefix": "CODING CHALLENGE:",
-                "template": self._get_coding_template()
-            }
-        }
-        
-        # Enhanced mapping of topics to their most appropriate challenge types
-        # Primary challenge type is first in the list (highest priority)
-        self.topic_to_challenge_types = {
-            "python basics": ["multiple_choice"],
-            "basics": ["multiple_choice"],
-            "introduction": ["multiple_choice"],
-            "overview": ["multiple_choice"],
-            "syntax": ["multiple_choice"],
-            
-            "data structures": ["coding"],
-            "lists": ["coding"],
-            "dictionaries": ["coding"],
-            "arrays": ["coding"],
-            "sets": ["coding"],
-            "tuples": ["coding"],
-            "stacks": ["coding"],
-            "queues": ["coding"],
-            "linked lists": ["coding"],
-            "trees": ["coding"],
-            "graphs": ["coding"],
-            
-            "algorithms": ["coding"],
-            "sorting": ["coding"],
-            "searching": ["coding"],
-            "recursion": ["coding"],
-            "dynamic programming": ["coding"],
-            "greedy": ["coding"],
-            
-            "functions": ["coding"],
-            "methods": ["coding"],
-            "parameters": ["multiple_choice"],
-            "arguments": ["multiple_choice"],
-            
-            "modules": ["multiple_choice"],
-            "packages": ["multiple_choice"],
-            "libraries": ["multiple_choice"],
-            "imports": ["multiple_choice"],
-            
-            "error handling": ["debugging"],
-            "exceptions": ["debugging"],
-            "try except": ["debugging"],
-            "debugging": ["debugging"],
-            "errors": ["debugging"],
-            "bugs": ["debugging"],
-            "troubleshooting": ["debugging"],
-            
-            "classes": ["coding"],
-            "objects": ["coding"],
-            "oop": ["coding"],
-            "inheritance": ["coding"],
-            "polymorphism": ["coding"],
-            "encapsulation": ["coding"],
-            
-            "file handling": ["debugging"],
-            "file operations": ["debugging"],
-            "io": ["debugging"],
-            "input output": ["debugging"],
-            
-            "regular expressions": ["debugging"],
-            "regex": ["debugging"],
-            "pattern matching": ["debugging"],
-            
-            "web development": ["coding"],
-            "web": ["coding"],
-            "html": ["coding"],
-            "css": ["coding"],
-            "javascript": ["coding"],
-            "frontend": ["coding"],
-            
-            "database": ["coding"],
-            "sql": ["coding"],
-            "nosql": ["coding"],
-            "data storage": ["coding"],
-            
-            "api": ["coding"],
-            "rest": ["coding"],
-            "graphql": ["coding"],
-            "endpoints": ["coding"],
-            
-            "testing": ["debugging"],
-            "unit tests": ["debugging"],
-            "integration tests": ["debugging"],
-            "test cases": ["debugging"],
-            
-            "object-oriented programming": ["coding"],
-            "functional programming": ["debugging"],
-            "concurrent programming": ["coding"],
-            
-            "default": ["multiple_choice", "coding", "debugging"]
-        }
-        
-        # Define topic categories for specialized templates
-        self.topic_categories = {
-            # Programming paradigms
-            "paradigm": [
-                "object-oriented", "oop", "functional", "concurrent", "procedural", 
-                "declarative", "imperative", "event-driven", "aspect-oriented"
-            ],
-            
-            # Data structures
-            "data_structure": [
-                "data structure", "list", "array", "dictionary", "set", "tuple", "stack", 
-                "queue", "linked list", "tree", "graph", "hash", "map", "heap"
-            ],
-            
-            # Algorithms
-            "algorithm": [
-                "algorithm", "sort", "search", "recursion", "dynamic programming", 
-                "greedy", "divide and conquer", "backtracking", "branch and bound"
-            ],
-            
-            # Language features
-            "language_feature": [
-                "function", "method", "class", "module", "package", "library", 
-                "import", "variable", "constant", "parameter", "argument"
-            ],
-            
-            # Error handling
-            "error_handling": [
-                "error handling", "exception", "try except", "debugging", 
-                "error", "bug", "troubleshooting"
-            ],
-            
-            # Web development
-            "web_development": [
-                "web", "html", "css", "javascript", "frontend", "backend", 
-                "fullstack", "responsive", "dom", "api", "rest", "graphql"
-            ],
-            
-            # Database
-            "database": [
-                "database", "sql", "nosql", "data storage", "query", "table", 
-                "record", "field", "index", "join", "transaction"
-            ],
-            
-            # Testing
-            "testing": [
-                "testing", "unit test", "integration test", "test case", 
-                "assertion", "mock", "stub", "coverage"
-            ]
-        }
-        
-        # Define difficulty levels and their characteristics
-        self.difficulty_levels = {
-            "easy": {
-                "description": "Basic concepts with clear guidance",
-                "prompt_modifier": "Create a straightforward question focusing on basic concepts. Include clear hints and guidance.",
-                "test_case_count": 2,
-                "code_complexity": "low",
-                "option_clarity": "high"
-            },
-            "medium": {
-                "description": "Core concepts with moderate guidance",
-                "prompt_modifier": "Create a moderately challenging question covering core concepts. Provide some guidance but require deeper understanding.",
-                "test_case_count": 3,
-                "code_complexity": "medium",
-                "option_clarity": "medium"
-            },
-            "hard": {
-                "description": "Advanced concepts with minimal guidance",
-                "prompt_modifier": "Create a challenging question focusing on advanced concepts. Provide minimal guidance and require comprehensive understanding.",
-                "test_case_count": 4,
-                "code_complexity": "high",
-                "option_clarity": "low"
-            }
-        }
-        
-        # Store the prompts used for transparency
-        self.last_used_prompts = {}
-    
-    def generate_challenges(self, pdf_content, max_challenges_per_topic=None, difficulty="medium"):
-        """
-        Generate programming challenges based on PDF content with specified difficulty.
-        
-        Args:
-            pdf_content (dict): Structured content from the PDF
-            max_challenges_per_topic (int or str): Maximum number of challenges per topic
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            list: Generated challenges
-        """
-        if not pdf_content or not pdf_content.get('topics'):
-            return []
-        
-        # Ensure max_challenges_per_topic is an integer
-        if max_challenges_per_topic is not None:
+    # Generate exactly 1 challenge of each type
+    for challenge_type in challenge_types:
+        for i in range(1):  # Generate 1 of each type
             try:
-                max_challenges_per_topic = int(max_challenges_per_topic)
-            except (ValueError, TypeError):
-                max_challenges_per_topic = None
-        
-        # Validate and set difficulty
-        if difficulty not in self.difficulty_levels:
-            difficulty = "medium"
-        
-        # Store the selected difficulty for use in prompt generation
-        self.selected_difficulty = difficulty
-        
-        topics = pdf_content.get('topics', [])
-        
-        # Dynamically adjust max_challenges_per_topic based on number of topics
-        if max_challenges_per_topic is None:
-            if len(topics) <= 3:
-                max_challenges_per_topic = 2
-            else:
-                max_challenges_per_topic = 1
-        
-        # Ensure max_challenges_per_topic is an integer for comparisons
-        max_challenges_per_topic = int(max_challenges_per_topic)
-        
-        challenges = []
-        
-        # Process each topic to generate challenges
-        for topic in topics:
-            # If topic is a dict, extract the name
-            if isinstance(topic, dict) and 'name' in topic:
-                topic_name = topic['name']
-            elif isinstance(topic, dict) and 'title' in topic:
-                topic_name = topic['title']
-            else:
-                topic_name = str(topic)
+                # Use different topics for variety
+                topic_index = (len(challenges)) % len(topics)
+                topic = topics[topic_index]
                 
-            # Get appropriate challenge types for this topic
-            challenge_types = self._get_challenge_types_for_topic(topic_name)
-            
-            # Limit to max_challenges_per_topic
-            # Ensure we're comparing integers
-            if len(challenge_types) > max_challenges_per_topic:
-                challenge_types = challenge_types[:max_challenges_per_topic]
-            
-            # Generate one challenge for each selected type
-            topic_challenges = []
-            
-            for challenge_type in challenge_types:
-                challenge = self._generate_challenge_for_topic(
-                    topic_name, 
-                    challenge_type, 
-                    pdf_content,
-                    difficulty
-                )
+                challenge = generate_static_challenge(challenge_type, difficulty, topic, i)
                 if challenge:
-                    # Add difficulty to the challenge object
-                    challenge['difficulty'] = difficulty
-                    topic_challenges.append(challenge)
-            
-            challenges.extend(topic_challenges)
-        
-        return challenges
+                    challenge['generated_by'] = 'static'  # Mark as static/fallback
+                    challenges.append(challenge)
+                    logger.info(f"Generated static {challenge_type} challenge #{i+1}: {topic}")
+            except Exception as e:
+                logger.error(f"Error generating static {challenge_type} challenge: {e}")
     
-    def _get_challenge_types_for_topic(self, topic):
-        """
-        Determine the most appropriate challenge types for a given topic.
-        
-        Args:
-            topic (str): The topic to generate challenges for
-            
-        Returns:
-            list: Challenge types appropriate for this topic
-        """
-        # Normalize topic for matching
-        normalized_topic = topic.lower()
-        
-        # Check for direct matches in our mapping
-        for key, challenge_types in self.topic_to_challenge_types.items():
-            if key == normalized_topic:
-                return challenge_types
-        
-        # Check for partial matches (key is contained in topic)
-        best_match = None
-        best_match_length = 0
-        
-        for key, challenge_types in self.topic_to_challenge_types.items():
-            if key in normalized_topic and len(key) > best_match_length:
-                best_match = challenge_types
-                best_match_length = len(key)
-        
-        if best_match:
-            return best_match
-        
-        # Check for word-level matches
-        topic_words = set(normalized_topic.split())
-        
-        for key, challenge_types in self.topic_to_challenge_types.items():
-            key_words = set(key.split())
-            if topic_words.intersection(key_words):
-                return challenge_types
-        
-        # Use default if no match found
-        return self.topic_to_challenge_types["default"]
+    logger.info(f"Generated {len(challenges)} fallback challenges")
+    return challenges
+
+
+def extract_basic_topics(content: str) -> List[str]:
+    """Extract meaningful programming topics from content"""
     
-    def _get_topic_category(self, topic):
-        """
-        Determine the category of a given topic for specialized template generation.
-        
-        Args:
-            topic (str): The topic to categorize
-            
-        Returns:
-            str: The category of the topic
-        """
-        topic_lower = topic.lower()
-        
-        # Check each category for matches
-        for category, keywords in self.topic_categories.items():
-            for keyword in keywords:
-                if keyword in topic_lower:
-                    return category
-        
-        # Default category if no match found
-        return "general"
+    # Enhanced programming keywords and their corresponding topics
+    topic_keywords = {
+        'Sorting Algorithms': ['sort', 'bubble', 'quick', 'merge', 'heap', 'insertion'],
+        'Search Algorithms': ['search', 'binary', 'linear', 'find', 'lookup'],
+        'Data Structures': ['list', 'array', 'dict', 'set', 'tuple', 'stack', 'queue', 'tree', 'graph'],
+        'Object-Oriented Programming': ['class', 'object', 'inheritance', 'polymorphism', 'encapsulation'],
+        'Functions and Methods': ['def ', 'function', 'method', 'return', 'parameter', 'argument'],
+        'Control Flow': ['for ', 'while ', 'if ', 'else', 'elif', 'loop', 'iteration', 'condition'],
+        'String Processing': ['string', 'str(', 'text', 'character', 'substring', 'split', 'join'],
+        'File Operations': ['file', 'open(', 'read(', 'write(', 'close', 'with open'],
+        'Error Handling': ['try:', 'except', 'error', 'exception', 'finally', 'raise'],
+        'Variables and Types': ['variable', 'int', 'float', 'bool', 'assignment', 'declare'],
+        'List Operations': ['append', 'extend', 'insert', 'remove', 'pop', 'index', 'slice'],
+        'Dictionary Operations': ['keys()', 'values()', 'items()', 'get()', 'update'],
+        'Mathematical Operations': ['math', 'calculation', 'arithmetic', 'sum', 'average', 'max', 'min'],
+        'Recursion': ['recursive', 'recursion', 'base case', 'recursive call'],
+        'Algorithm Complexity': ['complexity', 'big o', 'time', 'space', 'efficiency', 'optimization']
+    }
     
-    def _generate_challenge_for_topic(self, topic, challenge_type, pdf_content, difficulty):
-        """
-        Generate a single challenge of the specified type for the given topic with specified difficulty.
-        
-        Args:
-            topic (str): The topic to generate a challenge for
-            challenge_type (str): The type of challenge to generate
-            pdf_content (dict): Structured content from the PDF
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            dict: Generated challenge
-        """
-        # Get topic-specific content if available
-        topic_text = ""
-        
-        # Try to find topic content in different possible locations
-        if "topic_sections" in pdf_content:
-            for section in pdf_content.get("topic_sections", []):
-                if section.get("title", "").lower() == topic.lower():
-                    topic_text = section.get("content", "")
+    found_topics = []
+    content_lower = content.lower()
+    
+    # Find topics based on keywords
+    for topic, keywords in topic_keywords.items():
+        for keyword in keywords:
+            if keyword.lower() in content_lower:
+                found_topics.append(topic)
+                break
+    
+    # Extract specific function names and convert to meaningful topics
+    function_matches = re.findall(r'\bdef\s+(\w+)', content, re.IGNORECASE)
+    for func in function_matches[:3]:  # Limit to first 3 functions
+        if len(func) > 3 and not func.startswith('__'):  # Only meaningful function names
+            # Convert function name to topic
+            func_clean = func.replace('_', ' ').title()
+            topic_name = f"{func_clean} Implementation"
+            found_topics.append(topic_name)
+    
+    # Extract class names and convert to topics
+    class_matches = re.findall(r'\bclass\s+(\w+)', content, re.IGNORECASE)
+    for cls in class_matches[:2]:  # Limit to first 2 classes
+        if len(cls) > 3:  # Only meaningful class names
+            topic_name = f"{cls} Class Design"
+            found_topics.append(topic_name)
+    
+    # Look for algorithm names in comments
+    algorithm_patterns = [
+        r'(?:implement|algorithm|solve)[\s:]+(\w+(?:\s+\w+)?)',
+        r'(\w+\s+sort)',
+        r'(\w+\s+search)',
+        r'(\w+\s+tree)',
+        r'(\w+\s+algorithm)'
+    ]
+    
+    for pattern in algorithm_patterns:
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        for match in matches[:2]:
+            if len(match) > 3:
+                topic_name = match.title()
+                found_topics.append(topic_name)
+    
+    # Remove duplicates while preserving order
+    unique_topics = []
+    for topic in found_topics:
+        if topic not in unique_topics:
+            unique_topics.append(topic)
+    
+    # If no specific topics found, use meaningful generic ones
+    if not unique_topics:
+        unique_topics = [
+            "Python Programming Fundamentals",
+            "Algorithm Implementation", 
+            "Data Structure Operations",
+            "Problem Solving Techniques",
+            "Code Logic and Control Flow",
+            "Programming Best Practices"
+        ]
+    
+    # Ensure we have at least 6 topics for variety
+    while len(unique_topics) < 6:
+        additional_topics = [
+            "Advanced Programming Concepts",
+            "Code Optimization", 
+            "Software Design Patterns",
+            "Computational Thinking",
+            "Programming Methodology",
+            "Code Analysis and Testing",
+            "Memory Management",
+            "Performance Optimization"
+        ]
+        for topic in additional_topics:
+            if topic not in unique_topics:
+                unique_topics.append(topic)
+                if len(unique_topics) >= 6:
                     break
-        
-        if not topic_text and "topics_with_content" in pdf_content:
-            for t in pdf_content.get("topics_with_content", []):
-                if isinstance(t, dict) and t.get("name", "").lower() == topic.lower():
-                    topic_text = t.get("content", "")
-                    break
-        
-        # If still no content, use general text
-        if not topic_text:
-            topic_text = pdf_content.get("text", "")[:1000]  # Limit to first 1000 chars
-        
-        # Try to generate with LLM first if available
-        if LLM_AVAILABLE and is_model_ready():
-            challenge = self._generate_with_llm(topic, topic_text, challenge_type, difficulty)
-            if challenge:
-                challenge["topic"] = topic
-                challenge["type"] = challenge_type
-                # Add difficulty to the challenge object
-                challenge["difficulty"] = difficulty
-                return challenge
-        
-        # Fall back to template-based generation
-        return self._generate_with_template(topic, topic_text, challenge_type, difficulty)
     
-    def _generate_with_llm(self, topic, topic_text, challenge_type, difficulty):
-        """
-        Generate a challenge using the LLM.
-        
-        Args:
-            topic (str): The topic to generate a challenge for
-            topic_text (str): Text content related to the topic
-            challenge_type (str): The type of challenge to generate
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            dict: Generated challenge or None if generation failed
-        """
-        try:
-            challenge = generate_challenge_with_llm(topic, topic_text, challenge_type, difficulty)
-            if challenge:
-                # Add difficulty to the challenge object
-                challenge["difficulty"] = difficulty
-                return challenge
-        except Exception as e:
-            logging.error(f"Error generating challenge with LLM: {e}")
-        
-        return None
+    logger.info(f"Extracted {len(unique_topics)} topics: {unique_topics[:6]}")
+    return unique_topics
+
+
+def generate_static_challenge(challenge_type: str, difficulty: str, topic: str, index: int) -> Dict[str, Any]:
+    """Generate a static challenge based on templates"""
     
-    def _generate_with_template(self, topic, topic_text, challenge_type, difficulty):
-        """
-        Generate a challenge using templates.
-        
-        Args:
-            topic (str): The topic to generate a challenge for
-            topic_text (str): Text content related to the topic
-            challenge_type (str): The type of challenge to generate
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            dict: Generated challenge
-        """
-        # Get topic category for specialized templates
-        topic_category = self._get_topic_category(topic)
-        
-        # Get difficulty characteristics
-        difficulty_info = self.difficulty_levels.get(difficulty, self.difficulty_levels["medium"])
-        
-        # Generate challenge based on type
-        if challenge_type == "multiple_choice":
-            return self._generate_multiple_choice(topic, topic_text, topic_category, difficulty)
-        elif challenge_type == "debugging":
-            return self._generate_debugging(topic, topic_text, topic_category, difficulty)
-        elif challenge_type == "coding":
-            return self._generate_coding(topic, topic_text, topic_category, difficulty)
-        else:
-            logging.warning(f"Unknown challenge type: {challenge_type}")
-            return None
+    if challenge_type == 'multiple-choice':
+        return generate_static_mcq(difficulty, topic, index)
+    elif challenge_type == 'fill-in-the-blank':
+        return generate_static_fill_in_blank(difficulty, topic, index)
+    elif challenge_type == 'debugging':
+        return generate_static_debugging(difficulty, topic, index)
     
-    def _generate_multiple_choice(self, topic, topic_text, topic_category, difficulty):
-        """
-        Generate a multiple-choice challenge.
-        
-        Args:
-            topic (str): The topic to generate a challenge for
-            topic_text (str): Text content related to the topic
-            topic_category (str): Category of the topic
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            dict: Generated multiple-choice challenge
-        """
-        # Get template for this topic category
-        template = self._get_multiple_choice_template(topic_category)
-        
-        # Get difficulty characteristics
-        difficulty_info = self.difficulty_levels.get(difficulty, self.difficulty_levels["medium"])
-        
-        # Generate question based on difficulty
-        if difficulty == "easy":
-            question = f"Which of the following correctly describes {topic}?"
-        elif difficulty == "medium":
-            question = f"What is the most appropriate use case for {topic}?"
-        else:  # hard
-            question = f"Which statement about {topic} is true in complex scenarios?"
-        
-        # Generate options based on topic and difficulty
-        options = self._generate_options_for_topic(topic, topic_category, difficulty)
-        
-        # Generate a hint based on difficulty
-        if difficulty == "easy":
-            hint = f"Think about the basic definition of {topic}."
-        elif difficulty == "medium":
-            hint = f"Consider the key characteristics of {topic}."
-        else:  # hard
-            hint = f"Analyze the advanced applications of {topic}."
-        
-        return {
-            "id": str(uuid.uuid4()),
-            "topic": topic,
-            "type": "multiple_choice",
-            "question": question,
-            "options": options,
-            "correct_index": 0,  # First option is correct
-            "hint": hint,
-            "difficulty": difficulty  # Add difficulty to the challenge object
-        }
+    return None
+
+
+def generate_static_mcq(difficulty: str, topic: str, index: int) -> Dict[str, Any]:
+    """Generate static multiple choice questions"""
     
-    def _generate_debugging(self, topic, topic_text, topic_category, difficulty):
-        """
-        Generate a debugging challenge.
-        
-        Args:
-            topic (str): The topic to generate a challenge for
-            topic_text (str): Text content related to the topic
-            topic_category (str): Category of the topic
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            dict: Generated debugging challenge
-        """
-        # Get template for this topic category
-        template = self._get_debugging_template(topic_category)
-        
-        # Get difficulty characteristics
-        difficulty_info = self.difficulty_levels.get(difficulty, self.difficulty_levels["medium"])
-        
-        # Generate question based on difficulty
-        if difficulty == "easy":
-            question = f"Fix the bug in this {topic} code:"
-        elif difficulty == "medium":
-            question = f"Identify and fix the error in this {topic} implementation:"
-        else:  # hard
-            question = f"Debug this complex {topic} code and fix all issues:"
-        
-        # Generate buggy code based on topic and difficulty
-        buggy_code = self._generate_buggy_code_for_topic(topic, topic_category, difficulty)
-        
-        # Generate a hint based on difficulty
-        if difficulty == "easy":
-            hint = f"Check for syntax errors in the {topic} implementation."
-        elif difficulty == "medium":
-            hint = f"Look for logical errors in how {topic} is being used."
-        else:  # hard
-            hint = f"Consider edge cases and error handling in this {topic} implementation."
-        
-        return {
-            "id": str(uuid.uuid4()),
-            "topic": topic,
-            "type": "debugging",
-            "question": question,
-            "buggy_code": buggy_code,
-            "hint": hint,
-            "difficulty": difficulty  # Add difficulty to the challenge object
-        }
+    mcq_templates = {
+        'easy': [
+            {
+                'question': f'What is the primary purpose of {topic} in programming?',
+                'options': [
+                    f'To implement {topic.lower()} functionality effectively',
+                    'To handle user input exclusively',
+                    'To manage memory allocation only',
+                    'To create graphical user interfaces'
+                ],
+                'correct_answer': 0,
+                'explanation': f'{topic} is primarily used for implementing specific programming functionality and solving computational problems.'
+            },
+            {
+                'question': f'Which of the following best describes {topic}?',
+                'options': [
+                    'It only works with integer data types',
+                    f'It provides essential operations for {topic.lower()}',
+                    'It requires external libraries to function',
+                    'It cannot be used within functions'
+                ],
+                'correct_answer': 1,
+                'explanation': f'{topic} provides essential operations and techniques for solving programming problems.'
+            }
+        ],
+        'medium': [
+            {
+                'question': f'When implementing {topic}, what is the most critical consideration?',
+                'options': [
+                    'Using the shortest variable names possible',
+                    'Avoiding all comments in the code',
+                    f'Ensuring efficiency and correctness of {topic.lower()} operations',
+                    'Using only global variables'
+                ],
+                'correct_answer': 2,
+                'explanation': f'Efficiency and correctness are crucial when implementing {topic} to ensure optimal performance and reliable results.'
+            },
+            {
+                'question': f'What is the typical time complexity consideration for {topic}?',
+                'options': [
+                    'Always O(1) constant time',
+                    'Always O(n²) quadratic time',
+                    f'Depends on the specific {topic.lower()} implementation approach',
+                    'Time complexity is never relevant'
+                ],
+                'correct_answer': 2,
+                'explanation': f'Time complexity for {topic} varies based on the specific implementation approach and algorithm chosen.'
+            }
+        ],
+        'hard': [
+            {
+                'question': f'In advanced {topic} implementations, which optimization strategy is most effective?',
+                'options': [
+                    'Using only global variables for all data',
+                    f'Applying algorithmic optimizations and design patterns specific to {topic.lower()}',
+                    'Avoiding all function calls to reduce overhead',
+                    'Using only built-in functions without custom logic'
+                ],
+                'correct_answer': 1,
+                'explanation': f'Algorithmic optimizations and appropriate design patterns specific to {topic} provide the most effective performance improvements.'
+            },
+            {
+                'question': f'What is the most challenging aspect of {topic} in large-scale systems?',
+                'options': [
+                    'Understanding basic syntax requirements',
+                    'Choosing appropriate variable names',
+                    f'Managing complexity, scalability, and edge cases in {topic.lower()}',
+                    'Formatting print statements correctly'
+                ],
+                'correct_answer': 2,
+                'explanation': f'Managing complexity, ensuring scalability, and handling edge cases are the most challenging aspects of {topic} in large-scale systems.'
+            }
+        ]
+    }
     
-    def _generate_coding(self, topic, topic_text, topic_category, difficulty):
-        """
-        Generate a coding challenge.
-        
-        Args:
-            topic (str): The topic to generate a challenge for
-            topic_text (str): Text content related to the topic
-            topic_category (str): Category of the topic
-            difficulty (str): Difficulty level - "easy", "medium", or "hard"
-            
-        Returns:
-            dict: Generated coding challenge
-        """
-        # Get template for this topic category
-        template = self._get_coding_template(topic_category)
-        
-        # Get difficulty characteristics
-        difficulty_info = self.difficulty_levels.get(difficulty, self.difficulty_levels["medium"])
-        
-        # Generate question based on difficulty
-        if difficulty == "easy":
-            question = f"Write a function that implements a basic {topic} operation:"
-        elif difficulty == "medium":
-            question = f"Implement a function that performs the following {topic} task:"
-        else:  # hard
-            question = f"Create an efficient solution for this advanced {topic} problem:"
-        
-        # Generate code stub based on topic and difficulty
-        code_stub = self._generate_code_stub_for_topic(topic, topic_category, difficulty)
-        
-        # Generate test cases based on difficulty
-        test_cases = self._generate_test_cases_for_topic(
-            topic, 
-            topic_category, 
-            difficulty, 
-            difficulty_info["test_case_count"]
-        )
-        
-        # Generate a hint based on difficulty
-        if difficulty == "easy":
-            hint = f"Start by understanding the basic operations needed for {topic}."
-        elif difficulty == "medium":
-            hint = f"Break down the problem into smaller steps involving {topic}."
-        else:  # hard
-            hint = f"Consider optimization techniques specific to {topic}."
-        
-        return {
-            "id": str(uuid.uuid4()),
-            "topic": topic,
-            "type": "coding",
-            "question": question,
-            "code_stub": code_stub,
-            "test_cases": test_cases,
-            "hint": hint,
-            "difficulty": difficulty  # Add difficulty to the challenge object
-        }
+    template = mcq_templates[difficulty][index % 2]
     
-    def _generate_options_for_topic(self, topic, topic_category, difficulty):
-        """Generate options for a multiple-choice question."""
-        # This is a simplified implementation
-        if topic_category == "data_structure":
-            return [
-                f"{topic} is used to store and organize data efficiently",
-                f"{topic} is only used for mathematical calculations",
-                f"{topic} cannot be implemented in Python",
-                f"{topic} always has O(1) time complexity for all operations"
-            ]
-        elif topic_category == "algorithm":
-            return [
-                f"{topic} is an efficient approach to solving computational problems",
-                f"{topic} can only be used with specific programming languages",
-                f"{topic} always requires recursion",
-                f"{topic} cannot be optimized further"
-            ]
-        else:
-            return [
-                f"{topic} is a fundamental concept in programming",
-                f"{topic} is only relevant in legacy systems",
-                f"{topic} cannot be used in modern applications",
-                f"{topic} is only theoretical and has no practical applications"
-            ]
+    return {
+        'id': str(uuid.uuid4()),
+        'type': 'multiple-choice',
+        'topic': topic,
+        'question': template['question'],
+        'options': template['options'],
+        'correct_answer': template['correct_answer'],
+        'explanation': template['explanation'],
+        'difficulty': difficulty,
+        'generated_by': 'static'
+    }
+
+
+def generate_static_fill_in_blank(difficulty: str, topic: str, index: int) -> Dict[str, Any]:
+    """Generate static fill-in-the-blank challenges"""
     
-    def _generate_buggy_code_for_topic(self, topic, topic_category, difficulty):
-        """Generate buggy code for a debugging challenge."""
-        # This is a simplified implementation
-        if topic_category == "data_structure":
-            return f"""def use_{topic.replace(' ', '_')}(data):
-    result = []
-    for item in data:
-        # BUG: Incorrect implementation of {topic}
-        result.append(item - 1)  # Should be item + 1
-    return result"""
-        elif topic_category == "algorithm":
-            return f"""def {topic.replace(' ', '_')}_algorithm(arr):
-    # BUG: Incorrect loop condition
-    for i in range(len(arr) - 1):  # Should be range(len(arr))
-        if arr[i] > arr[i+1]:
-            arr[i], arr[i+1] = arr[i+1], arr[i]
-    return arr"""
-        else:
-            return f"""def process_{topic.replace(' ', '_')}(value):
-    # BUG: Missing error handling
-    result = 10 / value  # Should check if value is zero
-    return result"""
+    # Create meaningful function names based on topic
+    topic_clean = topic.lower().replace(' ', '_').replace('-', '_')
+    function_base = topic_clean.split('_')[0] if '_' in topic_clean else topic_clean[:10]
     
-    def _generate_code_stub_for_topic(self, topic, topic_category, difficulty):
-        """Generate code stub for a coding challenge."""
-        # This is a simplified implementation
-        if topic_category == "data_structure":
-            return f"""def implement_{topic.replace(' ', '_')}(data):
-    # Your code here
-    result = None
+    fill_blank_templates = {
+        'easy': [
+            {
+                'question': f'Complete the basic {topic} function:',
+                'code_template': f'def {function_base}_example(data):\n    if data is __BLANK_1__:\n        return __BLANK_2__\n    result = len(__BLANK_3__)\n    return result',
+                'blanks': [
+                    {
+                        'id': 'BLANK_1',
+                        'correct_answers': ['None', 'none', 'null'],
+                        'hint': 'What value represents "nothing" in Python?',
+                        'explanation': 'None is Python\'s null value'
+                    },
+                    {
+                        'id': 'BLANK_2', 
+                        'correct_answers': ['0', 'zero', '[]', 'None'],
+                        'hint': 'What should you return for empty/null data?',
+                        'explanation': 'Return 0 or an empty value for null input'
+                    },
+                    {
+                        'id': 'BLANK_3',
+                        'correct_answers': ['data', 'data '],
+                        'hint': 'What variable contains the input?',
+                        'explanation': 'Use the data parameter passed to the function'
+                    }
+                ],
+                'explanation': f'This demonstrates basic {topic} concepts with null checking and data processing.'
+            },
+            {
+                'question': f'Fill in the {topic} loop structure:',
+                'code_template': f'def process_{function_base}(items):\n    result = []\n    for item __BLANK_1__ items:\n        if item __BLANK_2__ 0:\n            result.__BLANK_3__(item)\n    return result',
+                'blanks': [
+                    {
+                        'id': 'BLANK_1',
+                        'correct_answers': ['in', 'in '],
+                        'hint': 'How do you iterate through a collection in Python?',
+                        'explanation': 'Use "in" to iterate through items in a collection'
+                    },
+                    {
+                        'id': 'BLANK_2',
+                        'correct_answers': ['>', '>=', '!='],
+                        'hint': 'What comparison checks if a number is positive?',
+                        'explanation': 'Use > to check if a number is greater than zero'
+                    },
+                    {
+                        'id': 'BLANK_3',
+                        'correct_answers': ['append', 'add'],
+                        'hint': 'How do you add an item to a list?',
+                        'explanation': 'Use append() to add items to a list'
+                    }
+                ],
+                'explanation': f'This shows basic {topic} iteration and filtering patterns.'
+            }
+        ],
+        'medium': [
+            {
+                'question': f'Complete the {topic} algorithm:',
+                'code_template': f'def {function_base}_search(arr, target):\n    left, right = 0, len(arr) - __BLANK_1__\n    while left __BLANK_2__ right:\n        mid = (left + right) // __BLANK_3__\n        if arr[mid] == target:\n            return __BLANK_4__\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return __BLANK_5__',
+                'blanks': [
+                    {
+                        'id': 'BLANK_1',
+                        'correct_answers': ['1'],
+                        'hint': 'Array indices start at 0, so the last index is...?',
+                        'explanation': 'Last index is length - 1'
+                    },
+                    {
+                        'id': 'BLANK_2',
+                        'correct_answers': ['<=', '≤'],
+                        'hint': 'When should the search continue?',
+                        'explanation': 'Continue while left is less than or equal to right'
+                    },
+                    {
+                        'id': 'BLANK_3',
+                        'correct_answers': ['2'],
+                        'hint': 'How do you find the middle point?',
+                        'explanation': 'Divide by 2 to find the midpoint'
+                    },
+                    {
+                        'id': 'BLANK_4',
+                        'correct_answers': ['mid', 'mid '],
+                        'hint': 'What should you return when target is found?',
+                        'explanation': 'Return the index where target was found'
+                    },
+                    {
+                        'id': 'BLANK_5',
+                        'correct_answers': ['-1', 'None'],
+                        'hint': 'What indicates the target was not found?',
+                        'explanation': 'Return -1 or None when target is not found'
+                    }
+                ],
+                'explanation': f'This implements a binary search algorithm, a key {topic} concept.'
+            },
+            {
+                'question': f'Complete the {topic} data structure:',
+                'code_template': f'class {function_base.title()}Stack:\n    def __init__(self):\n        self.__BLANK_1__ = []\n    \n    def push(self, item):\n        self.____.__BLANK_2__(item)\n    \n    def pop(self):\n        if self.is_empty():\n            return __BLANK_3__\n        return self.____.__BLANK_4__()\n    \n    def is_empty(self):\n        return len(self.____) == __BLANK_5__',
+                'blanks': [
+                    {
+                        'id': 'BLANK_1',
+                        'correct_answers': ['items', 'data', 'stack'],
+                        'hint': 'What should store the stack elements?',
+                        'explanation': 'Use a list to store stack items'
+                    },
+                    {
+                        'id': 'BLANK_2',
+                        'correct_answers': ['append', 'add'],
+                        'hint': 'How do you add to the end of a list?',
+                        'explanation': 'Use append() to add items to the end'
+                    },
+                    {
+                        'id': 'BLANK_3',
+                        'correct_answers': ['None', 'null'],
+                        'hint': 'What should you return from an empty stack?',
+                        'explanation': 'Return None for empty stack operations'
+                    },
+                    {
+                        'id': 'BLANK_4',
+                        'correct_answers': ['pop', 'pop()'],
+                        'hint': 'How do you remove the last item from a list?',
+                        'explanation': 'Use pop() to remove and return the last item'
+                    },
+                    {
+                        'id': 'BLANK_5',
+                        'correct_answers': ['0', 'zero'],
+                        'hint': 'What length indicates an empty collection?',
+                        'explanation': 'Length of 0 means the collection is empty'
+                    }
+                ],
+                'explanation': f'This implements a stack data structure, fundamental to {topic}.'
+            }
+        ],
+        'hard': [
+            {
+                'question': f'Complete the advanced {topic} implementation:',
+                'code_template': f'def {function_base}_advanced(data, key=None):\n    if not data:\n        return __BLANK_1__\n    \n    if key is None:\n        key = lambda x: __BLANK_2__\n    \n    sorted_data = __BLANK_3__(data, key=key)\n    result = {{}}\n    \n    for item in sorted_data:\n        group_key = key(item)\n        if group_key not in result:\n            result[group_key] = __BLANK_4__\n        result[group_key].__BLANK_5__(item)\n    \n    return result',
+                'blanks': [
+                    {
+                        'id': 'BLANK_1',
+                        'correct_answers': ['{}', 'dict()', 'None'],
+                        'hint': 'What should you return for empty input?',
+                        'explanation': 'Return an empty dict or None for empty input'
+                    },
+                    {
+                        'id': 'BLANK_2',
+                        'correct_answers': ['x', 'item', 'str(x)'],
+                        'hint': 'What is the default key function?',
+                        'explanation': 'Default key function returns the item itself'
+                    },
+                    {
+                        'id': 'BLANK_3',
+                        'correct_answers': ['sorted', 'sort'],
+                        'hint': 'How do you sort a collection?',
+                        'explanation': 'Use sorted() to sort a collection'
+                    },
+                    {
+                        'id': 'BLANK_4',
+                        'correct_answers': ['[]', 'list()'],
+                        'hint': 'What should initialize each group?',
+                        'explanation': 'Initialize each group with an empty list'
+                    },
+                    {
+                        'id': 'BLANK_5',
+                        'correct_answers': ['append', 'add'],
+                        'hint': 'How do you add items to a group?',
+                        'explanation': 'Use append() to add items to the group list'
+                    }
+                ],
+                'explanation': f'This demonstrates advanced {topic} with grouping and sorting.'
+            },
+            {
+                'question': f'Complete the {topic} optimization:',
+                'code_template': f'def {function_base}_optimized(data, cache=None):\n    if cache is __BLANK_1__:\n        cache = {{}}\n    \n    cache_key = __BLANK_2__(data)\n    if cache_key __BLANK_3__ cache:\n        return cache[cache_key]\n    \n    # Complex computation here\n    result = sum(x**2 for x in data if x __BLANK_4__ 0)\n    \n    cache[cache_key] = result\n    return __BLANK_5__',
+                'blanks': [
+                    {
+                        'id': 'BLANK_1',
+                        'correct_answers': ['None', 'none'],
+                        'hint': 'How do you check if cache was not provided?',
+                        'explanation': 'Check if cache is None'
+                    },
+                    {
+                        'id': 'BLANK_2',
+                        'correct_answers': ['tuple', 'str', 'hash'],
+                        'hint': 'How do you create a hashable key from data?',
+                        'explanation': 'Convert data to tuple or string for hashing'
+                    },
+                    {
+                        'id': 'BLANK_3',
+                        'correct_answers': ['in', 'in '],
+                        'hint': 'How do you check if a key exists in a dict?',
+                        'explanation': 'Use "in" to check key existence'
+                    },
+                    {
+                        'id': 'BLANK_4',
+                        'correct_answers': ['>', '>=', '!='],
+                        'hint': 'What condition filters positive numbers?',
+                        'explanation': 'Use > to check for positive numbers'
+                    },
+                    {
+                        'id': 'BLANK_5',
+                        'correct_answers': ['result', 'cache[cache_key]'],
+                        'hint': 'What should the function return?',
+                        'explanation': 'Return the computed result'
+                    }
+                ],
+                'explanation': f'This shows {topic} optimization using memoization.'
+            }
+        ]
+    }
     
-    return result"""
-        elif topic_category == "algorithm":
-            return f"""def {topic.replace(' ', '_')}_solution(arr):
-    # Your code here
-    result = None
+    template = fill_blank_templates[difficulty][index % 2]
     
-    return result"""
-        else:
-            return f"""def solve_{topic.replace(' ', '_')}(input_data):
-    # Your code here
-    result = None
+    return {
+        'id': str(uuid.uuid4()),
+        'type': 'fill-in-the-blank',
+        'topic': topic,
+        'question': template['question'],
+        'code_template': template['code_template'],
+        'blanks': template['blanks'],
+        'hint': f'Focus on {topic} fundamentals and common programming patterns.',
+        'explanation': template['explanation'],
+        'difficulty': difficulty,
+        'generated_by': 'static'
+    }
+
+
+def generate_static_debugging(difficulty: str, topic: str, index: int) -> Dict[str, Any]:
+    """Generate static debugging challenges"""
     
-    return result"""
+    # Create meaningful function names based on topic
+    topic_clean = topic.lower().replace(' ', '_').replace('-', '_')
+    function_base = topic_clean.split('_')[0] if '_' in topic_clean else topic_clean[:10]
     
-    def _generate_test_cases_for_topic(self, topic, topic_category, difficulty, count=3):
-        """Generate test cases for a coding challenge."""
-        # This is a simplified implementation
-        test_cases = []
-        
-        if topic_category == "data_structure":
-            test_cases = [
-                {"input": [1, 2, 3], "expected": [2, 4, 6]},
-                {"input": [5, 10, 15], "expected": [10, 20, 30]},
-                {"input": [0, -1, -2], "expected": [0, -2, -4]},
-                {"input": [100, 200], "expected": [200, 400]}
-            ]
-        elif topic_category == "algorithm":
-            test_cases = [
-                {"input": [3, 1, 4, 1, 5], "expected": [1, 1, 3, 4, 5]},
-                {"input": [9, 8, 7, 6, 5], "expected": [5, 6, 7, 8, 9]},
-                {"input": [2, 2, 1, 1, 3], "expected": [1, 1, 2, 2, 3]},
-                {"input": [5, 3, 8, 4, 2], "expected": [2, 3, 4, 5, 8]}
-            ]
-        else:
-            test_cases = [
-                {"input": "hello", "expected": "HELLO"},
-                {"input": "world", "expected": "WORLD"},
-                {"input": "python", "expected": "PYTHON"},
-                {"input": "programming", "expected": "PROGRAMMING"}
-            ]
-        
-        # Return only the requested number of test cases
-        return test_cases[:count]
+    debugging_templates = {
+        'easy': [
+            {
+                'question': f'The following code is supposed to implement a basic {topic} operation, but it contains bugs. Find and fix all the errors.',
+                'buggy_code': f'def buggy_{function_base}(data):\n    # This function should implement {topic}\n    result = data\n    if result = None:  # Bug: assignment instead of comparison\n        return "No data provided"\n    \n    # Bug: calling non-existent method\n    processed = result.process_data()\n    return processed',
+                'explanation': f'The bugs are: 1) Using assignment (=) instead of comparison (==) in the if statement, and 2) calling a non-existent method process_data() on the result. Fix by using == for comparison and implementing proper {topic} processing.'
+            },
+            {
+                'question': f'This {topic} function has logical errors that prevent it from working correctly. Identify and correct them.',
+                'buggy_code': f'def process_{function_base}(items):\n    # Process items using {topic} principles\n    total = 0\n    for item in items\n        total += item  # Bug: missing colon\n    \n    # Bug: incorrect return logic\n    if total > 0\n        return total\n    else\n        return "Error"  # Should return 0, not string',
+                'explanation': f'The bugs are: 1) Missing colon after the for loop statement, 2) Missing colon after the if statement, and 3) Returning a string "Error" instead of 0 for empty/zero cases. Fix by adding colons and returning consistent data types.'
+            }
+        ],
+        'medium': [
+            {
+                'question': f'This {topic} implementation has subtle bugs that affect its correctness. Debug and fix the issues.',
+                'buggy_code': f'def advanced_{function_base}(data, threshold=10):\n    # Advanced {topic} processing with threshold\n    results = []\n    \n    for i in range(len(data)):\n        if data[i] >= threshold:  # Bug: should be >\n            processed = data[i] * 2\n            results.append(processed)\n    \n    # Bug: modifying list during iteration\n    for item in results:\n        if item > 50:\n            results.remove(item)\n    \n    return results',
+                'explanation': f'The bugs are: 1) Using >= instead of > for threshold comparison (off-by-one error), and 2) Modifying the list while iterating over it, which can skip elements. Fix by using correct comparison and creating a new list or iterating backwards.'
+            },
+            {
+                'question': f'This {topic} function has performance and logic issues. Find and resolve the problems.',
+                'buggy_code': f'def optimized_{function_base}(data_list):\n    # Optimized {topic} processing\n    result = []\n    \n    for i in range(len(data_list)):\n        for j in range(len(data_list)):  # Bug: unnecessary nested loop\n            if i == j:\n                # Bug: inefficient string concatenation\n                result += str(data_list[i])\n    \n    # Bug: returning wrong data type\n    return result',
+                'explanation': f'The bugs are: 1) Unnecessary nested loop creating O(n²) complexity, 2) Inefficient string concatenation using +=, and 3) Returning a list of characters instead of a proper result. Fix by removing nested loop, using proper string methods, and returning appropriate data type.'
+            }
+        ],
+        'hard': [
+            {
+                'question': f'This complex {topic} implementation has multiple subtle bugs including race conditions and edge cases. Debug thoroughly.',
+                'buggy_code': f'import threading\n\ndef complex_{function_base}(data, workers=4):\n    # Complex {topic} with threading\n    results = []\n    lock = threading.Lock()\n    \n    def worker(chunk):\n        local_results = []\n        for item in chunk:\n            # Bug: race condition - accessing shared resource\n            if len(results) < 100:  # Bug: checking shared state without lock\n                processed = item ** 2\n                local_results.append(processed)\n        \n        # Bug: potential race condition\n        results.extend(local_results)\n    \n    # Bug: incorrect chunk calculation\n    chunk_size = len(data) // workers\n    threads = []\n    \n    for i in range(workers):\n        start = i * chunk_size\n        end = start + chunk_size  # Bug: last chunk may miss elements\n        chunk = data[start:end]\n        \n        thread = threading.Thread(target=worker, args=(chunk,))\n        threads.append(thread)\n        thread.start()\n    \n    # Bug: not joining threads properly\n    for thread in threads:\n        thread.join()\n    \n    return results',
+                'explanation': f'The bugs are: 1) Race condition when checking len(results) without lock, 2) Race condition when extending results list, 3) Incorrect chunk calculation that may miss last elements, and 4) Not using lock when modifying shared results. Fix by proper locking, correct chunking, and thread-safe operations.'
+            },
+            {
+                'question': f'This enterprise-level {topic} system has architectural flaws and edge case bugs. Identify and fix all issues.',
+                'buggy_code': f'class Enterprise{topic.replace(" ", "").replace("-", "")}System:\n    def __init__(self):\n        self.cache = {{}}\n        self.stats = {{"processed": 0, "errors": 0}}\n    \n    def process_batch(self, batch_data, cache_enabled=True):\n        # Enterprise {topic} batch processing\n        if not batch_data:  # Bug: should handle None differently\n            return []\n        \n        results = []\n        \n        for data in batch_data:\n            try:\n                # Bug: cache key collision potential\n                cache_key = str(data)\n                \n                if cache_enabled and cache_key in self.cache:\n                    result = self.cache[cache_key]\n                else:\n                    result = self._process_single(data)\n                    # Bug: unbounded cache growth\n                    if cache_enabled:\n                        self.cache[cache_key] = result\n                \n                results.append(result)\n                self.stats["processed"] += 1\n                \n            except Exception as e:\n                # Bug: swallowing exceptions without proper logging\n                self.stats["errors"] += 1\n                continue  # Bug: should handle partial failures better\n        \n        return results\n    \n    def _process_single(self, data):\n        # Bug: no input validation\n        return data * 2  # Oversimplified processing',
+                'explanation': f'The bugs are: 1) Not handling None input properly, 2) Cache key collisions with str() conversion, 3) Unbounded cache growth leading to memory leaks, 4) Swallowing exceptions without logging, 5) Poor error handling for partial failures, and 6) No input validation. Fix by proper input validation, better cache key generation, cache size limits, proper exception handling, and logging.'
+            }
+        ]
+    }
     
-    def _get_multiple_choice_template(self, topic_category="general"):
-        """Get template for multiple-choice questions."""
-        templates = {
-            "data_structure": "Which of the following correctly describes how {topic} stores and organizes data?",
-            "algorithm": "What is the time complexity of {topic} in the worst case?",
-            "language_feature": "Which statement about {topic} in Python is correct?",
-            "error_handling": "What is the best practice for handling errors in {topic}?",
-            "web_development": "Which approach is most appropriate when implementing {topic} in a web application?",
-            "database": "How should {topic} be used in database operations?",
-            "testing": "What is the most effective way to test {topic}?",
-            "general": "Which of the following statements about {topic} is correct?"
-        }
-        
-        return templates.get(topic_category, templates["general"])
+    template = debugging_templates[difficulty][index % 2]
     
-    def _get_debugging_template(self, topic_category="general"):
-        """Get template for debugging challenges."""
-        templates = {
-            "data_structure": "Fix the bug in this {topic} implementation:",
-            "algorithm": "Debug this {topic} algorithm and fix the error:",
-            "language_feature": "This code using {topic} has a bug. Find and fix it:",
-            "error_handling": "The error handling in this {topic} code is incorrect. Debug it:",
-            "web_development": "This {topic} code for a web application has an issue. Fix it:",
-            "database": "Debug this database operation involving {topic}:",
-            "testing": "This test for {topic} is failing. Find and fix the bug:",
-            "general": "Find and fix the bug in this code related to {topic}:"
-        }
-        
-        return templates.get(topic_category, templates["general"])
-    
-    def _get_coding_template(self, topic_category="general"):
-        """Get template for coding challenges."""
-        templates = {
-            "data_structure": "Implement a function that uses {topic} to solve the following problem:",
-            "algorithm": "Write a function that implements the {topic} algorithm:",
-            "language_feature": "Create a function that demonstrates the use of {topic} in Python:",
-            "error_handling": "Implement a function with proper error handling for {topic}:",
-            "web_development": "Write a function that would be used in a web application for {topic}:",
-            "database": "Implement a function that performs a database operation involving {topic}:",
-            "testing": "Create a function that can be used to test {topic}:",
-            "general": "Write a function related to {topic} that solves the following problem:"
-        }
-        
-        return templates.get(topic_category, templates["general"])
+    return {
+        'id': str(uuid.uuid4()),
+        'type': 'debugging',
+        'topic': topic,
+        'question': template['question'],
+        'code_stub': template['buggy_code'],
+        'buggy_code': template['buggy_code'],
+        'explanation': template['explanation'],
+        'difficulty': difficulty,
+        'generated_by': 'static'
+    }
+

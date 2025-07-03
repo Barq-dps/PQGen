@@ -1,20 +1,42 @@
-import os
 import re
 import json
 import uuid
 import time
 import threading
 import logging
+import os
+from typing import List, Dict, Any, Optional
 
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
+# Replace torch/transformers with openai
+try:
+    import openai
+except ImportError:
+    print("OpenAI library not found. Please install with: pip install openai")
+    openai = None
+
+# Import PDF content analyzer
+try:
+    from pdf_content_analyzer import (
+        extract_text_from_pdf,
+        analyze_pdf_content,
+        extract_code_snippets
+    )
+    PDF_ANALYZER_AVAILABLE = True
+except ImportError:
+    print("PDF content analyzer not found. Dynamic topic extraction will be limited.")
+    PDF_ANALYZER_AVAILABLE = False
 
 # Import fallback hint generator
-from fallback_hints import (
-    generate_fallback_hint_for_multiple_choice,
-    generate_fallback_hint_for_debugging,
-    generate_fallback_hint_for_coding
-)
+try:
+    from fallback_hints import (
+        generate_fallback_hint_for_multiple_choice,
+        generate_fallback_hint_for_debugging,
+        generate_fallback_hint_for_fib
+    )
+    FALLBACK_HINTS_AVAILABLE = True
+except ImportError:
+    print("Fallback hints module not found. Will use OpenAI for all hints.")
+    FALLBACK_HINTS_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -22,779 +44,632 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-DEBUG_PARSING = True
+DEBUG_PARSING = False  # Reduced debug logging for speed
 if DEBUG_PARSING:
     logger.setLevel(logging.DEBUG)
 
-# Model globals
-tokenizer = None
-model = None
+# Global OpenAI client
+openai_client = None
 
-# Loading flags and lock
-model_loading_lock = threading.Lock()
-is_model_loaded = False
-is_model_loading = False
-
-# Model configuration
-MODEL_NAME = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
-MAX_NEW_TOKENS = 1024
-TEMPERATURE = 0.7
-TOP_P = 0.95
-REPETITION_PENALTY = 1.1
-
-
-def load_model_in_background():
-    global tokenizer, model, is_model_loaded, is_model_loading
-    with model_loading_lock:
-        if is_model_loaded or is_model_loading:
-            return
-        is_model_loading = True
-
-    def _load():
-        global tokenizer, model, is_model_loaded, is_model_loading
-        try:
-            logger.info(f"Loading model {MODEL_NAME}...")
-            start = time.time()
-            tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-            model = AutoModelForCausalLM.from_pretrained(
-                MODEL_NAME,
-                torch_dtype=torch.float16,
-                device_map="auto",
-                low_cpu_mem_usage=True
-            )
-            model.eval()
-            logger.info(f"Model loaded in {time.time() - start:.2f}s")
-            with model_loading_lock:
-                is_model_loaded = True
-                is_model_loading = False
-        except Exception as e:
-            logger.error(f"Error loading model: {e}")
-            with model_loading_lock:
-                is_model_loading = False
-
-    thread = threading.Thread(target=_load, daemon=True)
-    thread.start()
-
-
-def is_model_ready() -> bool:
-    with model_loading_lock:
-        return is_model_loaded
-
-
-def generate_with_llm(prompt: str, max_tokens: int = MAX_NEW_TOKENS, temperature: float = TEMPERATURE) -> str | None:
-    if not is_model_ready():
-        logger.warning("Model not ready for generation")
-        return None
+def initialize_openai():
+    """Initialize OpenAI client with new v1.0+ API"""
+    global openai_client
+    
     try:
-        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-        with torch.no_grad():
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=max_tokens,
-                temperature=temperature,
-                top_p=TOP_P,
-                repetition_penalty=REPETITION_PENALTY,
-                do_sample=True
-            )
-        text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        prefix = tokenizer.decode(inputs.input_ids[0], skip_special_tokens=True)
-        return text[len(prefix):].strip()
+        api_key = os.getenv('OPENAI_API_KEY')
+        if not api_key:
+            logger.error("OPENAI_API_KEY environment variable not set")
+            return False
+        
+        # Initialize client with new v1.0+ syntax
+        openai_client = openai.OpenAI(api_key=api_key)
+        logger.info("OpenAI API initialized successfully")
+        logger.info("OpenAI API ready for use")
+        return True
+        
     except Exception as e:
-        logger.error(f"Error during generation: {e}")
+        logger.error(f"Failed to initialize OpenAI: {e}")
+        return False
+
+def is_model_ready():
+    """Check if the OpenAI model is ready for use"""
+    global openai_client
+    
+    if openai_client is None:
+        # Try to initialize if not already done
+        return initialize_openai()
+    
+    return True
+
+def make_openai_request(messages, model="gpt-3.5-turbo", max_tokens=1000, temperature=0.7):
+    """Make OpenAI API request with new v1.0+ syntax"""
+    global openai_client
+    
+    try:
+        if not openai_client:
+            if not initialize_openai():
+                return None
+        
+        # Use new v1.0+ syntax
+        response = openai_client.chat.completions.create(
+            model=model,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        
+        # Extract content from response
+        if response.choices and len(response.choices) > 0:
+            content = response.choices[0].message.content
+            return content
+        else:
+            logger.warning("Empty response from OpenAI API")
+            return None
+            
+    except Exception as e:
+        logger.error(f"OpenAI API error: {e}")
         return None
 
+# Initialize OpenAI on module import
+initialize_openai()
 
-def clean_json_string(s: str) -> str:
-    # strip out triple-quoted Python strings
-    s = re.sub(r'""".*?"""', '', s, flags=re.DOTALL)
-    s = re.sub(r"'''(.*?)'''", '', s, flags=re.DOTALL)
-    # remove code fences
-    s = re.sub(r'```(?:json|python)?|```', '', s)
-    # normalize quotes
-    s = s.replace(""", '"').replace(""", '"')
-    # remove trailing commas
-    s = re.sub(r',\s*}', '}', s)
-    s = re.sub(r',\s*]', ']', s)
-    # convert Python literals to JSON literals
-    s = re.sub(r'\bTrue\b', 'true', s)
-    s = re.sub(r'\bFalse\b', 'false', s)
-    s = re.sub(r'\bNone\b', 'null', s)
-    # Fix common empty value errors: "field": , -> "field": ""
-    s = re.sub(r':\s*,', ': "",', s)
-    s = re.sub(r':\s*\n', ': "",\n', s)
-    return s.strip()
-
-
-def extract_json_blocks(text: str) -> list[str]:
-    blocks: list[str] = []
-    # Look for JSON objects with more aggressive pattern matching
-    for match in re.finditer(r'\{.*?\}', text, re.DOTALL):
-        blocks.append(match.group(0))
-    # Look for JSON arrays
-    for match in re.finditer(r'\[.*?\]', text, re.DOTALL):
-        blocks.append(match.group(0))
-    return blocks
-
-
-def normalize_mc(parsed: dict) -> dict | None:
-    """Normalize multiple choice question format and ensure correct answer is marked."""
-    # Case 1: Standard format with options as strings and correct_index
-    if ('options' in parsed and isinstance(parsed['options'], list) and 
-            all(isinstance(o, str) for o in parsed['options']) and
-            'correct_index' in parsed and isinstance(parsed['correct_index'], int)):
-        # Ensure correct_index is within bounds
-        if 0 <= parsed['correct_index'] < len(parsed['options']):
-            return parsed
-        else:
-            # Fix out-of-bounds correct_index
-            parsed['correct_index'] = 0
-            return parsed
+def extract_and_parse_json(text: str, expected_keys: List[str] = None) -> Dict[str, Any]:
+    """
+    Enhanced JSON extraction and parsing with multiple strategies
+    """
+    if not text:
+        logger.warning("Empty text provided for JSON parsing")
+        return {}
     
-    # Case 2: Options as strings but no correct_index
-    if ('options' in parsed and isinstance(parsed['options'], list) and 
-            all(isinstance(o, str) for o in parsed['options']) and
-            'correct_index' not in parsed):
-        # Try to find correct_index in other fields
-        if 'correct_option' in parsed and isinstance(parsed['correct_option'], int):
-            parsed['correct_index'] = parsed['correct_option']
+    # Strategy 1: Direct JSON parsing
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            logger.debug("Direct JSON parsing successful")
             return parsed
-        elif 'answer_index' in parsed and isinstance(parsed['answer_index'], int):
-            parsed['correct_index'] = parsed['answer_index']
-            return parsed
-        else:
-            # Default to first option if no correct index is found
-            parsed['correct_index'] = 0
-            return parsed
+    except json.JSONDecodeError:
+        pass
     
-    # Case 3: Options as objects with 'correct' property
-    if ('options' in parsed and isinstance(parsed['options'], list) and 
-            all(isinstance(o, dict) for o in parsed['options'])):
-        # Find the correct option
-        correct_index = -1
-        for i, option in enumerate(parsed['options']):
-            if option.get('correct') is True:
-                correct_index = i
-                break
-        
-        # Convert options to strings and set correct_index
-        if correct_index >= 0:
-            string_options = [opt.get('text', str(opt)) for opt in parsed['options']]
-            parsed['options'] = string_options
-            parsed['correct_index'] = correct_index
-            return parsed
+    # Strategy 2: Extract JSON from code blocks
+    json_patterns = [
+        r'```json\s*(\{.*?\})\s*```',
+        r'```\s*(\{.*?\})\s*```',
+        r'(\{[^{}]*\{[^{}]*\}[^{}]*\})',  # Nested braces
+        r'(\{[^{}]+\})',  # Simple braces
+    ]
     
-    # Case 4: Choices format (common in some LLM outputs)
-    if 'choices' in parsed and isinstance(parsed['choices'], list):
-        # Extract text from choices
-        string_options = []
-        correct_index = -1
+    for pattern in json_patterns:
+        matches = re.findall(pattern, text, re.DOTALL | re.IGNORECASE)
+        for match in matches:
+            try:
+                parsed = json.loads(match)
+                if isinstance(parsed, dict):
+                    logger.debug(f"JSON extracted with pattern: {pattern[:20]}...")
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+    
+    # Strategy 3: JSON repair for common issues
+    try:
+        # Fix common JSON issues
+        cleaned = text.strip()
         
-        for i, choice in enumerate(parsed['choices']):
-            if isinstance(choice, dict) and 'text' in choice:
-                string_options.append(choice['text'])
-                # Check if this choice is marked as correct
-                if choice.get('correct') is True or choice.get('is_correct') is True:
-                    correct_index = i
+        # Remove markdown code blocks
+        cleaned = re.sub(r'```(?:json)?\s*', '', cleaned)
+        cleaned = re.sub(r'```\s*', '', cleaned)
         
-        if string_options:
-            parsed['options'] = string_options
-            parsed['explanation'] = parsed.get('explanation', parsed.get('hint', ''))
+        # Fix trailing commas
+        cleaned = re.sub(r',\s*}', '}', cleaned)
+        cleaned = re.sub(r',\s*]', ']', cleaned)
+        
+        # Fix single quotes to double quotes
+        cleaned = re.sub(r"'([^']*)':", r'"\1":', cleaned)
+        cleaned = re.sub(r":\s*'([^']*)'", r': "\1"', cleaned)
+        
+        # Try parsing the cleaned version
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, dict):
+            logger.debug("JSON repair successful")
+            return parsed
             
-            # Set correct_index if found, otherwise default to 0
-            if correct_index >= 0:
-                parsed['correct_index'] = correct_index
-            else:
-                parsed['correct_index'] = 0
-                
-            return parsed
+    except json.JSONDecodeError:
+        pass
     
-    # If we can't normalize the format, return None
-    return None
-
-
-def fix_json_syntax(json_str: str) -> str:
-    """Fix common JSON syntax errors that the LLM might produce."""
-    # Fix missing values for fields (e.g., "code_stub": , -> "code_stub": "",)
-    json_str = re.sub(r':\s*,', ': "",', json_str)
-    json_str = re.sub(r':\s*\n', ': "",\n', json_str)
+    # Strategy 4: Extract key-value pairs manually
+    if expected_keys:
+        result = {}
+        for key in expected_keys:
+            # Look for key: "value" or key: value patterns
+            patterns = [
+                rf'"{key}"\s*:\s*"([^"]*)"',
+                rf'"{key}"\s*:\s*([^,\}}]+)',
+                rf'{key}\s*:\s*"([^"]*)"',
+                rf'{key}\s*:\s*([^,\}}]+)'
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    value = match.group(1).strip()
+                    # Clean up the value
+                    value = value.strip('"\'')
+                    result[key] = value
+                    break
+        
+        if result:
+            logger.debug(f"Manual key extraction successful: {list(result.keys())}")
+            return result
     
-    # Fix missing commas between fields
-    json_str = re.sub(r'"\s*\n\s*"', '",\n"', json_str)
-    
-    # Fix trailing commas
-    json_str = re.sub(r',\s*}', '}', json_str)
-    json_str = re.sub(r',\s*]', ']', json_str)
-    
-    return json_str
+    logger.warning("All JSON parsing strategies failed")
+    return {}
 
-
-def extract_first_json_object(text: str) -> str:
-    """Extract the first complete JSON object from text."""
-    # Find the first opening brace
-    start = text.find('{')
-    if start == -1:
-        return ""
+def generate_multiple_choice_challenge(content: str, difficulty: str, topic: str) -> Dict[str, Any]:
+    """Generate multiple choice challenge with improved prompts"""
     
-    # Count braces to find the matching closing brace
-    count = 1
-    for i in range(start + 1, len(text)):
-        if text[i] == '{':
-            count += 1
-        elif text[i] == '}':
-            count -= 1
-            if count == 0:
-                # Found the matching closing brace
-                return text[start:i+1]
+    prompt = f"""Create a multiple-choice programming question about "{topic}" with {difficulty} difficulty.
+
+Content context: {content[:1500]}
+
+Requirements:
+1. Create a clear, specific question about {topic}
+2. Provide exactly 4 answer options (A, B, C, D)
+3. Make sure only ONE option is clearly correct
+4. Include a brief explanation of why the correct answer is right
+5. Base the question on the provided content context
+
+Return ONLY a JSON object with this exact structure:
+{{
+    "question": "Your question here",
+    "options": ["Option A", "Option B", "Option C", "Option D"],
+    "correct_answer": 0,
+    "explanation": "Brief explanation of the correct answer",
+    "topic": "{topic}",
+    "difficulty": "{difficulty}"
+}}
+
+Make sure the JSON is valid and complete."""
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are an expert programming instructor. Create educational multiple-choice questions that test understanding of programming concepts. Always respond with valid JSON only."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
     
-    # No matching closing brace found
-    return ""
-
-
-def parse_llm_response(response: str, default=None) -> dict | None:
+    response = make_openai_request(messages, max_tokens=800, temperature=0.7)
+    
     if not response:
-        return default
+        logger.warning("Empty response from OpenAI for multiple-choice challenge")
+        return {}
     
-    # First, try to extract the first complete JSON object
-    json_obj = extract_first_json_object(response)
-    if json_obj:
-        # Fix common syntax errors
-        json_obj = fix_json_syntax(json_obj)
+    # Parse the JSON response
+    challenge = extract_and_parse_json(response, ["question", "options", "correct_answer", "explanation"])
+    
+    if not challenge:
+        logger.warning("Failed to parse multiple-choice challenge JSON")
+        return {}
+    
+    # Validate and clean up the challenge
+    if "question" not in challenge or "options" not in challenge:
+        logger.warning("Multiple-choice challenge missing required fields")
+        return {}
+    
+    # Ensure options is a list
+    if isinstance(challenge.get("options"), str):
+        # Try to parse as JSON array
         try:
-            data = json.loads(json_obj)
-            # Check if it's a valid challenge object
-            if 'question' in data:
-                # Check for multiple-choice format
-                mc = normalize_mc(data)
-                if mc and 'options' in mc:
-                    return mc
-                    
-                # Check for debugging challenge format
-                if 'buggy_code' in data:
-                    # Ensure buggy_code has a value
-                    if not data.get('buggy_code'):
-                        data['buggy_code'] = "# Empty code stub"
-                    return data
-                    
-                # Check for coding challenge format
-                if 'code_stub' in data or 'function_template' in data:
-                    # Ensure code_stub has a value
-                    if 'code_stub' in data and not data.get('code_stub'):
-                        data['code_stub'] = "# Empty code stub"
-                    if 'function_template' in data and not data.get('function_template'):
-                        data['function_template'] = "# Empty function template"
-                    # Ensure test_cases exists and has a value
-                    if 'test_cases' not in data or not data.get('test_cases'):
-                        data['test_cases'] = [{"input": "example", "expected": "example"}]
-                    return data
+            challenge["options"] = json.loads(challenge["options"])
+        except:
+            # Split by common delimiters
+            options_str = challenge["options"]
+            challenge["options"] = [opt.strip() for opt in re.split(r'[,\n]', options_str) if opt.strip()]
+    
+    # Ensure we have 4 options
+    if not isinstance(challenge.get("options"), list) or len(challenge["options"]) != 4:
+        logger.warning("Multiple-choice challenge doesn't have exactly 4 options")
+        return {}
+    
+    # Ensure correct_answer is an integer
+    try:
+        challenge["correct_answer"] = int(challenge.get("correct_answer", 0))
+    except (ValueError, TypeError):
+        challenge["correct_answer"] = 0
+    
+    # Add metadata
+    challenge["id"] = f"mc_{uuid.uuid4().hex[:8]}"
+    challenge["type"] = "multiple-choice"
+    challenge["topic"] = topic
+    challenge["difficulty"] = difficulty
+    
+    return challenge
+
+def generate_debugging_challenge(content: str, difficulty: str, topic: str) -> Dict[str, Any]:
+    """Generate debugging challenge with actual buggy code"""
+    
+    prompt = f"""Create a debugging challenge about "{topic}" with {difficulty} difficulty.
+
+Content context: {content[:1500]}
+
+Requirements:
+1. Write actual Python code that contains a specific, realistic bug
+2. The bug should be related to {topic}
+3. Provide the expected output vs actual output
+4. Include the type of bug (syntax_error, logic_error, runtime_error)
+5. Provide a clear explanation of what's wrong and how to fix it
+6. Make the code runnable (not just pseudocode)
+
+Common bug types to use:
+- Syntax errors: wrong operators (= vs ==), missing colons, incorrect indentation
+- Logic errors: off-by-one errors, wrong conditions, incorrect loop bounds
+- Runtime errors: division by zero, index out of range, type mismatches
+
+Return ONLY a JSON object with this exact structure:
+{{
+    "question": "Find and fix the bug in this code that should [describe what it should do]",
+    "code_stub": "def function_name():\\n    # Actual buggy Python code here\\n    pass",
+    "bug_type": "syntax_error",
+    "expected_output": "What the output should be",
+    "actual_output": "What the buggy code actually produces (or error message)",
+    "fix_explanation": "Explanation of the bug and how to fix it",
+    "topic": "{topic}",
+    "difficulty": "{difficulty}"
+}}
+
+Make sure the code_stub contains REAL, RUNNABLE Python code with an actual bug."""
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are an expert programming instructor who creates realistic debugging exercises. Always include actual buggy code that students can run and debug. Respond with valid JSON only."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
+    
+    response = make_openai_request(messages, max_tokens=1000, temperature=0.8)
+    
+    if not response:
+        logger.warning("Empty response from OpenAI for debugging challenge")
+        return {}
+    
+    # Parse the JSON response
+    challenge = extract_and_parse_json(response, ["question", "code_stub", "bug_type", "expected_output", "actual_output", "fix_explanation"])
+    
+    if not challenge:
+        logger.warning("Failed to parse debugging challenge JSON")
+        return {}
+    
+    # Validate required fields
+    required_fields = ["question", "code_stub"]
+    if not all(field in challenge for field in required_fields):
+        logger.warning("Debugging challenge missing required fields")
+        return {}
+    
+    # Clean up code_stub
+    code_stub = challenge.get("code_stub", "")
+    if code_stub:
+        # Ensure proper formatting
+        code_stub = code_stub.replace("\\n", "\n").replace("\\t", "\t")
+        challenge["code_stub"] = code_stub
+    
+    # Add metadata
+    challenge["id"] = f"debug_{uuid.uuid4().hex[:8]}"
+    challenge["type"] = "debugging"
+    challenge["topic"] = topic
+    challenge["difficulty"] = difficulty
+    
+    # Set defaults for missing fields
+    challenge.setdefault("bug_type", "logic_error")
+    challenge.setdefault("expected_output", "See code comments for expected behavior")
+    challenge.setdefault("actual_output", "Code contains a bug")
+    challenge.setdefault("fix_explanation", "Analyze the code to find and fix the bug")
+    
+    return challenge
+
+def generate_fill_in_blank_challenge(content: str, difficulty: str, topic: str) -> Dict[str, Any]:
+    """Generate fill-in-the-blank challenge with proper ____ formatting"""
+    
+    prompt = f"""Create a fill-in-the-blank programming exercise about "{topic}" with {difficulty} difficulty.
+
+Content context: {content[:1500]}
+
+Requirements:
+1. Create Python code with 2-4 blanks marked with exactly "____" (4 underscores)
+2. Each blank should test understanding of {topic}
+3. Provide multiple choice options for each blank
+4. Include the complete working solution
+5. Add explanations for each blank
+
+Return ONLY a JSON object with this exact structure:
+{{
+    "question": "Complete the code by filling in the blanks",
+    "code_with_blanks": "def example():\\n    x = ____\\n    for i in ____:\\n        print(____)",
+    "blanks": [
+        {{
+            "blank_number": 1,
+            "correct_answer": "[]",
+            "options": ["[]", "{{}}", "()", "None"],
+            "explanation": "Initialize an empty list"
+        }},
+        {{
+            "blank_number": 2,
+            "correct_answer": "range(5)",
+            "options": ["range(5)", "5", "[1,2,3,4,5]", "list(5)"],
+            "explanation": "Create a range of numbers"
+        }}
+    ],
+    "complete_solution": "def example():\\n    x = []\\n    for i in range(5):\\n        print(i)",
+    "topic": "{topic}",
+    "difficulty": "{difficulty}"
+}}
+
+Make sure to use exactly "____" (4 underscores) for each blank."""
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are an expert programming instructor creating fill-in-the-blank exercises. Use exactly 4 underscores (____) for each blank. Respond with valid JSON only."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]
+    
+    response = make_openai_request(messages, max_tokens=1000, temperature=0.7)
+    
+    if not response:
+        logger.warning("Empty response from OpenAI for fill-in-the-blank challenge")
+        return {}
+    
+    # Parse the JSON response
+    challenge = extract_and_parse_json(response, ["question", "code_with_blanks", "blanks", "complete_solution"])
+    
+    if not challenge:
+        logger.warning("Failed to parse fill-in-the-blank challenge JSON")
+        return {}
+    
+    # Validate required fields
+    required_fields = ["question", "code_with_blanks", "blanks"]
+    if not all(field in challenge for field in required_fields):
+        logger.warning("Fill-in-the-blank challenge missing required fields")
+        return {}
+    
+    # Clean up code formatting
+    code_with_blanks = challenge.get("code_with_blanks", "")
+    if code_with_blanks:
+        code_with_blanks = code_with_blanks.replace("\\n", "\n").replace("\\t", "\t")
+        challenge["code_with_blanks"] = code_with_blanks
+    
+    complete_solution = challenge.get("complete_solution", "")
+    if complete_solution:
+        complete_solution = complete_solution.replace("\\n", "\n").replace("\\t", "\t")
+        challenge["complete_solution"] = complete_solution
+    
+    # Validate blanks
+    blanks = challenge.get("blanks", [])
+    if not isinstance(blanks, list) or len(blanks) == 0:
+        logger.warning("Fill-in-the-blank challenge has no valid blanks")
+        return {}
+    
+    # Ensure each blank has required fields
+    for i, blank in enumerate(blanks):
+        if not isinstance(blank, dict):
+            continue
+        blank.setdefault("blank_number", i + 1)
+        blank.setdefault("correct_answer", "")
+        blank.setdefault("options", [])
+        blank.setdefault("explanation", "")
+    
+    # Add metadata
+    challenge["id"] = f"fib_{uuid.uuid4().hex[:8]}"
+    challenge["type"] = "fill-in-the-blank"
+    challenge["topic"] = topic
+    challenge["difficulty"] = difficulty
+    
+    return challenge
+
+def generate_single_challenge(content: str, challenge_type: str, difficulty: str, topic: str) -> Dict[str, Any]:
+    """Generate a single challenge of the specified type"""
+    
+    logger.info(f"Generating {challenge_type} challenge for topic: {topic}")
+    
+    try:
+        if challenge_type == "multiple-choice":
+            return generate_multiple_choice_challenge(content, difficulty, topic)
+        elif challenge_type == "debugging":
+            return generate_debugging_challenge(content, difficulty, topic)
+        elif challenge_type == "fill-in-the-blank":
+            return generate_fill_in_blank_challenge(content, difficulty, topic)
+        else:
+            logger.warning(f"Unknown challenge type: {challenge_type}")
+            return {}
+    
+    except Exception as e:
+        logger.error(f"Error generating {challenge_type} challenge: {e}")
+        return {}
+
+def generate_short_hint_for_challenge(challenge: Dict[str, Any]) -> str:
+    """Generate a short hint for a challenge"""
+    
+    challenge_type = challenge.get("type", "")
+    topic = challenge.get("topic", "programming")
+    
+    # Try to use pre-generated hint first
+    if "hint" in challenge:
+        return challenge["hint"]
+    
+    # Generate hint based on challenge type
+    if challenge_type == "multiple-choice":
+        if FALLBACK_HINTS_AVAILABLE:
+            try:
+                return generate_fallback_hint_for_multiple_choice(challenge)
+            except:
+                pass
+        return f"Think about the key concepts in {topic}. Review the question carefully."
+    
+    elif challenge_type == "debugging":
+        if FALLBACK_HINTS_AVAILABLE:
+            try:
+                return generate_fallback_hint_for_debugging(challenge)
+            except:
+                pass
+        
+        bug_type = challenge.get("bug_type", "")
+        if "syntax" in bug_type.lower():
+            return "Look for syntax errors like wrong operators or missing punctuation."
+        elif "logic" in bug_type.lower():
+            return "Check the logic flow - are the conditions and loops correct?"
+        else:
+            return "Run the code and analyze the error message or unexpected output."
+    
+    elif challenge_type == "fill-in-the-blank":
+        if FALLBACK_HINTS_AVAILABLE:
+            try:
+                return generate_fallback_hint_for_fib(challenge)
+            except:
+                pass
+        return f"Consider the syntax and concepts related to {topic}."
+    
+    else:
+        return f"Think about the fundamental concepts of {topic}."
+
+def extract_topics_from_content(content: str, file_path: str = None) -> List[str]:
+    """Extract topics from content using enhanced methods"""
+    
+    logger.info("Using dynamic PDF content analysis for topic extraction")
+    
+    try:
+        if PDF_ANALYZER_AVAILABLE and file_path:
+            # Use enhanced PDF analysis
+            analysis = analyze_pdf_content(content)
+            topics = analysis.get('topics', [])
+            
+            if topics and len(topics) > 0:
+                logger.info(f"Enhanced topic extraction successful: {len(topics)} topics")
+                return topics
+        
+        # Fallback to LLM-based extraction
+        logger.info("Using LLM-based topic extraction as fallback")
+        
+        prompt = f"""Analyze this programming content and extract the main topics covered.
+
+Content: {content[:2000]}
+
+Requirements:
+1. Extract 5-10 specific programming topics
+2. Focus on concrete concepts, not general terms
+3. Use clear, educational topic names
+4. Return as a JSON array of strings
+
+Return ONLY a JSON array like: ["Topic 1", "Topic 2", "Topic 3"]"""
+
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert at analyzing programming content. Extract specific, educational topics that can be used to create programming challenges."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+        
+        response = make_openai_request(messages, max_tokens=500, temperature=0.5)
+        
+        if not response:
+            logger.warning("LLM topic extraction returned no response")
+            return []
+        
+        # Try to parse as JSON array
+        try:
+            topics = json.loads(response)
+            if isinstance(topics, list):
+                # Clean and validate topics
+                clean_topics = []
+                for topic in topics:
+                    if isinstance(topic, str) and len(topic.strip()) > 2:
+                        clean_topics.append(topic.strip())
+                
+                if clean_topics:
+                    logger.info(f"LLM topic extraction successful: {len(clean_topics)} topics")
+                    return clean_topics
         except json.JSONDecodeError:
             pass
-    
-    # If direct extraction failed, try the standard approach with cleaning
-    cleaned = clean_json_string(response)
-    if DEBUG_PARSING:
-        logger.debug(f"Cleaned response:\n{cleaned}")
-    
-    # Try to parse the entire cleaned response first
-    try:
-        full = json.loads(cleaned)
         
-        # Check for multiple-choice format
-        mc = normalize_mc(full)
-        if mc and 'question' in mc and 'options' in mc:
-            if DEBUG_PARSING:
-                logger.debug(f"Parsed full cleaned response as MC")
-            return mc
-            
-        # Check for debugging or coding challenge format
-        if 'question' in full:
-            if 'buggy_code' in full:
-                # Ensure buggy_code has a value
-                if not full.get('buggy_code'):
-                    full['buggy_code'] = "# Empty code stub"
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed full cleaned response as debugging challenge")
-                return full
-            elif 'code_stub' in full or 'function_template' in full:
-                # Ensure code_stub has a value
-                if 'code_stub' in full and not full.get('code_stub'):
-                    full['code_stub'] = "# Empty code stub"
-                if 'function_template' in full and not full.get('function_template'):
-                    full['function_template'] = "# Empty function template"
-                # Ensure test_cases exists and has a value
-                if 'test_cases' not in full or not full.get('test_cases'):
-                    full['test_cases'] = [{"input": "example", "expected": "example"}]
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed full cleaned response as coding challenge")
-                return full
-    except json.JSONDecodeError:
-        pass
-    
-    # If that fails, extract and try individual JSON blocks
-    blocks = extract_json_blocks(cleaned)
-    
-    # Try parsing each extracted JSON block
-    for i, block in enumerate(blocks):
-        # Fix common syntax errors
-        block = fix_json_syntax(block)
-        try:
-            data = json.loads(block)
-            
-            # Check for multiple-choice format
-            mc = normalize_mc(data)
-            if mc and 'question' in mc and 'options' in mc:
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed block {i} as MC")
-                return mc
-                
-            # Check for debugging challenge format
-            if 'question' in data and 'buggy_code' in data:
-                # Ensure buggy_code has a value
-                if not data.get('buggy_code'):
-                    data['buggy_code'] = "# Empty code stub"
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed block {i} as debugging challenge")
-                return data
-                
-            # Check for coding challenge format
-            if 'question' in data and ('code_stub' in data or 'function_template' in data):
-                # Ensure code_stub has a value
-                if 'code_stub' in data and not data.get('code_stub'):
-                    data['code_stub'] = "# Empty code stub"
-                if 'function_template' in data and not data.get('function_template'):
-                    data['function_template'] = "# Empty function template"
-                # Ensure test_cases exists and has a value
-                if 'test_cases' not in data or not data.get('test_cases'):
-                    data['test_cases'] = [{"input": "example", "expected": "example"}]
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed block {i} as coding challenge")
-                return data
-                
-        except json.JSONDecodeError as e:
-            if DEBUG_PARSING:
-                logger.debug(f"Block {i} parse failed: {e}")
-    
-    # Last resort: try to parse the raw response
-    try:
-        raw = json.loads(response)
+        # If JSON parsing fails, try to extract topics from text
+        lines = response.split('\n')
+        topics = []
+        for line in lines:
+            line = line.strip()
+            # Look for quoted strings or list items
+            if line.startswith('"') and line.endswith('"'):
+                topics.append(line[1:-1])
+            elif line.startswith('- '):
+                topics.append(line[2:])
+            elif re.match(r'^\d+\.\s+', line):
+                topics.append(re.sub(r'^\d+\.\s+', '', line))
         
-        # Check for multiple-choice format
-        mc = normalize_mc(raw)
-        if mc and 'question' in mc and 'options' in mc:
-            if DEBUG_PARSING:
-                logger.debug(f"Parsed raw response as MC")
-            return mc
-            
-        # Check for debugging or coding challenge format
-        if 'question' in raw:
-            if 'buggy_code' in raw:
-                # Ensure buggy_code has a value
-                if not raw.get('buggy_code'):
-                    raw['buggy_code'] = "# Empty code stub"
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed raw response as debugging challenge")
-                return raw
-            elif 'code_stub' in raw or 'function_template' in raw:
-                # Ensure code_stub has a value
-                if 'code_stub' in raw and not raw.get('code_stub'):
-                    raw['code_stub'] = "# Empty code stub"
-                if 'function_template' in raw and not raw.get('function_template'):
-                    raw['function_template'] = "# Empty function template"
-                # Ensure test_cases exists and has a value
-                if 'test_cases' not in raw or not raw.get('test_cases'):
-                    raw['test_cases'] = [{"input": "example", "expected": "example"}]
-                if DEBUG_PARSING:
-                    logger.debug(f"Parsed raw response as coding challenge")
-                return raw
-    except json.JSONDecodeError:
-        pass
-    
-    logger.warning(f"Failed to parse LLM response: {response[:200]}...")
-    return default
-
-
-def create_multiple_choice_prompt(topic: str, topic_text: str, difficulty: str, language: str = "python") -> str:
-    """Create a prompt for generating a multiple choice question with the specified difficulty."""
-    
-    # Define difficulty-specific guidance
-    difficulty_guidance = {
-        "easy": (
-            "For EASY difficulty:\n"
-            "- Focus on basic concepts and definitions\n"
-            "- Use straightforward language and clear examples\n"
-            "- Make the correct answer obvious to someone who understands the basics\n"
-            "- Include distractors that are clearly wrong to knowledgeable users\n"
-            "- Provide a helpful hint that guides toward the correct answer\n"
-        ),
-        "medium": (
-            "For MEDIUM difficulty:\n"
-            "- Focus on practical application and understanding\n"
-            "- Require knowledge of how concepts work together\n"
-            "- Make distractors plausible but incorrect\n"
-            "- Test understanding rather than just memorization\n"
-            "- Provide a hint that points to the relevant concept\n"
-        ),
-        "hard": (
-            "For HARD difficulty:\n"
-            "- Focus on edge cases, advanced concepts, or subtle distinctions\n"
-            "- Require deep understanding and critical thinking\n"
-            "- Make distractors very plausible and require careful analysis\n"
-            "- Test advanced knowledge and problem-solving skills\n"
-            "- Provide a subtle hint that requires analysis to apply\n"
-        )
-    }
-    
-    # Get the appropriate guidance for the requested difficulty
-    guidance = difficulty_guidance.get(difficulty.lower(), difficulty_guidance["medium"])
-    
-    return (
-        f"<s>\n"
-        f"You are a JSON-generating API that creates programming challenges. You must output ONLY valid JSON with NO additional text.\n"
-        f"</s>\n\n"
-        f"<TASK>\n"
-        f"Generate a multiple choice question about {topic} in {language} at {difficulty} difficulty.\n"
-        f"{guidance}\n"
-        f"</TASK>\n\n"
-        f"<CONTEXT>\n{topic_text[:500]}\n</CONTEXT>\n\n"
-        "<OUTPUT_REQUIREMENTS>\n"
-        "1. Output EXACTLY ONE valid JSON object\n"
-        "2. DO NOT include ANY text before or after the JSON\n"
-        "3. DO NOT include markdown code fences (```)\n"
-        "4. DO NOT include explanatory comments\n"
-        "5. DO NOT leave any fields empty or null\n"
-        "6. Use ONLY double quotes for strings\n"
-        "</OUTPUT_REQUIREMENTS>\n\n"
-        "<JSON_SCHEMA>\n"
-        "{\n"
-        '  "question": "A clear, specific question about the topic",\n'
-        '  "options": ["Option A", "Option B", "Option C", "Option D"],\n'
-        '  "correct_index": 0,\n'
-        '  "hint": "A helpful hint for solving the question"\n'
-        "}\n"
-        "</JSON_SCHEMA>\n\n"
-        "Output the JSON object now:"
-    )
-
-
-def create_debugging_prompt(topic: str, topic_text: str, difficulty: str, language: str = "python") -> str:
-    """Create a prompt for generating a debugging challenge with the specified difficulty."""
-    
-    # Define difficulty-specific guidance
-    difficulty_guidance = {
-        "easy": (
-            "For EASY difficulty:\n"
-            "- Include a single, obvious bug that's easy to spot\n"
-            "- Use simple code with clear structure\n"
-            "- Focus on common syntax errors or basic logical mistakes\n"
-            "- Provide clear hints that point directly to the issue\n"
-            "- Code should be 5-10 lines maximum\n"
-        ),
-        "medium": (
-            "For MEDIUM difficulty:\n"
-            "- Include 1-2 bugs that require understanding the code flow\n"
-            "- Use moderately complex code with multiple functions or classes\n"
-            "- Focus on logical errors, edge cases, or incorrect algorithm implementation\n"
-            "- Provide hints that guide toward the general area of the issue\n"
-            "- Code should be 10-20 lines\n"
-        ),
-        "hard": (
-            "For HARD difficulty:\n"
-            "- Include subtle bugs that require deep understanding\n"
-            "- Use complex code with multiple components or advanced patterns\n"
-            "- Focus on complex logical errors, race conditions, or optimization issues\n"
-            "- Provide hints that require analysis to apply correctly\n"
-            "- Code should be 20-30 lines with appropriate complexity\n"
-        )
-    }
-    
-    # Get the appropriate guidance for the requested difficulty
-    guidance = difficulty_guidance.get(difficulty.lower(), difficulty_guidance["medium"])
-    
-    return (
-        f"<s>\n"
-        f"You are a JSON-generating API that creates programming challenges. You must output ONLY valid JSON with NO additional text.\n"
-        f"</s>\n\n"
-        f"<TASK>\n"
-        f"Generate a debugging challenge about {topic} in {language} at {difficulty} difficulty.\n"
-        f"{guidance}\n"
-        f"</TASK>\n\n"
-        f"<CONTEXT>\n{topic_text[:500]}\n</CONTEXT>\n\n"
-        "<OUTPUT_REQUIREMENTS>\n"
-        "1. Output EXACTLY ONE valid JSON object\n"
-        "2. DO NOT include ANY text before or after the JSON\n"
-        "3. DO NOT include markdown code fences (```)\n"
-        "4. DO NOT include explanatory comments\n"
-        "5. DO NOT leave any fields empty or null\n"
-        "6. Use ONLY double quotes for strings\n"
-        "7. For code in JSON strings, escape newlines with \\n and quotes with \\\"\n"
-        "</OUTPUT_REQUIREMENTS>\n\n"
-        "<JSON_SCHEMA>\n"
-        "{\n"
-        '  "question": "A clear description of the bug to fix",\n'
-        '  "buggy_code": "def example():\\n    return \\"buggy code here\\"",\n'
-        '  "bug_description": "A specific description of what is wrong",\n'
-        '  "hint": "A hint to help solve the problem"\n'
-        "}\n"
-        "</JSON_SCHEMA>\n\n"
-        "Output the JSON object now:"
-    )
-
-
-def create_coding_prompt(topic: str, topic_text: str, difficulty: str, language: str = "python") -> str:
-    """Create a prompt for generating a coding challenge with the specified difficulty."""
-    
-    # Define difficulty-specific guidance
-    difficulty_guidance = {
-        "easy": (
-            "For EASY difficulty:\n"
-            "- Create a straightforward implementation task\n"
-            "- Focus on basic algorithms or data structures\n"
-            "- Require only fundamental programming concepts\n"
-            "- Include 1-2 simple test cases with clear inputs/outputs\n"
-            "- Solution should be achievable in 5-10 lines of code\n"
-            "- Provide a helpful hint that guides toward the solution approach\n"
-        ),
-        "medium": (
-            "For MEDIUM difficulty:\n"
-            "- Create a challenge requiring algorithmic thinking\n"
-            "- Focus on efficiency and proper implementation\n"
-            "- Require understanding of intermediate programming concepts\n"
-            "- Include 2-3 test cases covering normal and edge cases\n"
-            "- Solution should require 10-20 lines of code\n"
-            "- Provide a hint that points to the general solution strategy\n"
-        ),
-        "hard": (
-            "For HARD difficulty:\n"
-            "- Create a complex challenge requiring optimization\n"
-            "- Focus on advanced algorithms or data structures\n"
-            "- Require understanding of advanced programming concepts\n"
-            "- Include 3-4 test cases covering normal, edge, and corner cases\n"
-            "- Solution may require 20-30 lines of code\n"
-            "- Provide a subtle hint that requires analysis to apply\n"
-        )
-    }
-    
-    # Get the appropriate guidance for the requested difficulty
-    guidance = difficulty_guidance.get(difficulty.lower(), difficulty_guidance["medium"])
-    
-    return (
-        f"<s>\n"
-        f"You are a JSON-generating API that creates programming challenges. You must output ONLY valid JSON with NO additional text.\n"
-        f"</s>\n\n"
-        f"<TASK>\n"
-        f"Generate a coding challenge about {topic} in {language} at {difficulty} difficulty.\n"
-        f"{guidance}\n"
-        f"</TASK>\n\n"
-        f"<CONTEXT>\n{topic_text[:500]}\n</CONTEXT>\n\n"
-        "<OUTPUT_REQUIREMENTS>\n"
-        "1. Output EXACTLY ONE valid JSON object\n"
-        "2. DO NOT include ANY text before or after the JSON\n"
-        "3. DO NOT include markdown code fences (```)\n"
-        "4. DO NOT include explanatory comments\n"
-        "5. DO NOT leave any fields empty or null\n"
-        "6. Use ONLY double quotes for strings\n"
-        "7. For code in JSON strings, escape newlines with \\n and quotes with \\\"\n"
-        "</OUTPUT_REQUIREMENTS>\n\n"
-        "<JSON_SCHEMA>\n"
-        "{\n"
-        '  "question": "A clear problem description",\n'
-        '  "code_stub": "def solution():\\n    # Your code here\\n    pass",\n'
-        '  "test_cases": [{"input": "example input", "expected": "expected output"}],\n'
-        '  "hint": "A helpful hint for solving the problem"\n'
-        "}\n"
-        "</JSON_SCHEMA>\n\n"
-        "Output the JSON object now:"
-    )
-
-
-def generate_multiple_choice(topic: str, topic_text: str, difficulty: str, language: str = "python") -> dict | None:
-    """Generate a multiple choice question using the LLM with specified difficulty."""
-    prompt = create_multiple_choice_prompt(topic, topic_text, difficulty, language)
-    resp = generate_with_llm(prompt)
-    parsed = parse_llm_response(resp, {})
-    
-    if not parsed or "question" not in parsed or "options" not in parsed:
-        logger.warning(f"Invalid multiple choice JSON: {parsed}")
-        return None
-    
-    # Normalize the multiple choice format
-    mc = normalize_mc(parsed)
-    if not mc:
-        logger.warning(f"Failed to normalize multiple choice format: {parsed}")
-        return None
-    
-    # Validate option count based on difficulty
-    option_count = len(mc["options"])
-    if option_count < 3:
-        logger.warning(f"Too few options for multiple choice: {option_count}")
-        # Add default options if needed
-        while len(mc["options"]) < 4:
-            mc["options"].append(f"Option {len(mc['options']) + 1}")
-    
-    # Get hint or generate fallback
-    hint = mc.get("hint", mc.get("explanation", ""))
-    if not hint or len(hint.strip()) < 10:  # Check if hint is empty or too short
-        logger.info(f"Generating fallback hint for multiple choice about {topic}")
-        hint = generate_fallback_hint_for_multiple_choice(topic, difficulty, mc["question"])
-    
-    return {
-        "id": str(uuid.uuid4()),
-        "topic": topic,
-        "type": "multiple-choice",
-        "question": mc["question"],
-        "options": mc["options"],
-        "correct_index": mc["correct_index"],
-        "hint": hint,
-        "difficulty": difficulty
-    }
-
-
-def generate_debugging(topic: str, topic_text: str, difficulty: str, language: str = "python") -> dict | None:
-    """Generate a debugging challenge using the LLM with specified difficulty."""
-    prompt = create_debugging_prompt(topic, topic_text, difficulty, language)
-    resp = generate_with_llm(prompt)
-    parsed = parse_llm_response(resp, {})
-    
-    if not parsed or "question" not in parsed or "buggy_code" not in parsed:
-        logger.warning(f"Invalid debugging JSON: {parsed}")
-        return None
-    
-    # Validate code complexity based on difficulty
-    code_lines = parsed["buggy_code"].count('\n') + 1
-    expected_min_lines = {
-        "easy": 5,
-        "medium": 10,
-        "hard": 20
-    }
-    expected_max_lines = {
-        "easy": 10,
-        "medium": 20,
-        "hard": 30
-    }
-    
-    min_lines = expected_min_lines.get(difficulty.lower(), expected_min_lines["medium"])
-    max_lines = expected_max_lines.get(difficulty.lower(), expected_max_lines["medium"])
-    
-    if code_lines < min_lines:
-        logger.warning(f"Debugging challenge code too short for {difficulty} difficulty: {code_lines} lines")
-    elif code_lines > max_lines:
-        logger.warning(f"Debugging challenge code too long for {difficulty} difficulty: {code_lines} lines")
-    
-    # Get bug description for hint
-    bug_description = parsed.get("bug_description", "")
-    
-    # Get hint or generate fallback
-    hint = parsed.get("hint", bug_description)
-    if not hint or len(hint.strip()) < 10:  # Check if hint is empty or too short
-        logger.info(f"Generating fallback hint for debugging challenge about {topic}")
-        hint = generate_fallback_hint_for_debugging(topic, difficulty, parsed["buggy_code"])
-    
-    return {
-        "id": str(uuid.uuid4()),
-        "topic": topic,
-        "type": "debugging",
-        "question": parsed["question"],
-        "code_stub": parsed["buggy_code"],
-        "hint": hint,
-        "bug_comment": bug_description or hint,  # Use hint as bug comment if no description provided
-        "difficulty": difficulty
-    }
-
-
-def generate_coding(topic: str, topic_text: str, difficulty: str, language: str = "python") -> dict | None:
-    """Generate a coding challenge using the LLM with specified difficulty."""
-    prompt = create_coding_prompt(topic, topic_text, difficulty, language)
-    resp = generate_with_llm(prompt)
-    parsed = parse_llm_response(resp, {})
-    
-    if not parsed or "question" not in parsed or "code_stub" not in parsed or "test_cases" not in parsed:
-        logger.warning(f"Invalid coding JSON: {parsed}")
-        return None
-    
-    # Validate code complexity based on difficulty
-    code_lines = parsed["code_stub"].count('\n') + 1
-    expected_min_lines = {
-        "easy": 3,
-        "medium": 5,
-        "hard": 8
-    }
-    expected_max_lines = {
-        "easy": 10,
-        "medium": 15,
-        "hard": 20
-    }
-    
-    min_lines = expected_min_lines.get(difficulty.lower(), expected_min_lines["medium"])
-    max_lines = expected_max_lines.get(difficulty.lower(), expected_max_lines["medium"])
-    
-    if code_lines < min_lines:
-        logger.warning(f"Coding challenge stub too short for {difficulty} difficulty: {code_lines} lines")
-    elif code_lines > max_lines:
-        logger.warning(f"Coding challenge stub too long for {difficulty} difficulty: {code_lines} lines")
-    
-    # Validate test case count based on difficulty
-    test_case_count = len(parsed["test_cases"])
-    expected_test_cases = {
-        "easy": 1,
-        "medium": 2,
-        "hard": 3
-    }
-    
-    min_test_cases = expected_test_cases.get(difficulty.lower(), expected_test_cases["medium"])
-    
-    if test_case_count < min_test_cases:
-        logger.warning(f"Too few test cases for {difficulty} difficulty: {test_case_count} test cases")
-    
-    # Get hint or generate fallback
-    hint = parsed.get("hint", "")
-    if not hint or len(hint.strip()) < 10:  # Check if hint is empty or too short
-        logger.info(f"Generating fallback hint for coding challenge about {topic}")
-        hint = generate_fallback_hint_for_coding(topic, difficulty, parsed["question"])
-    
-    return {
-        "id": str(uuid.uuid4()),
-        "topic": topic,
-        "type": "coding",
-        "question": parsed["question"],
-        "code_stub": parsed["code_stub"],
-        "test_cases": parsed["test_cases"],
-        "hint": hint,
-        "difficulty": difficulty
-    }
-
-
-def generate_challenge_with_llm(topic: str, topic_text: str, challenge_type: str, difficulty: str = "medium") -> dict | None:
-    """
-    Generate a programming challenge using the LLM with the specified difficulty.
-    
-    Args:
-        topic: The topic to generate a challenge about
-        topic_text: Text content related to the topic
-        challenge_type: Type of challenge ("multiple_choice", "debugging", "coding")
-        difficulty: Difficulty level ("easy", "medium", "hard")
+        if topics:
+            logger.info(f"Text-based topic extraction successful: {len(topics)} topics")
+            return topics[:10]  # Limit to 10 topics
         
-    Returns:
-        A dictionary containing the challenge, or None if generation failed
-    """
-    logger.info(f"Generating {challenge_type} challenge for topic '{topic}' at {difficulty} difficulty")
-    
-    if not is_model_ready():
-        logger.warning("Model not ready, loading in background")
-        load_model_in_background()
-        return None
+        logger.warning("All topic extraction methods failed")
+        return []
         
-    if challenge_type == "multiple_choice":
-        return generate_multiple_choice(topic, topic_text, difficulty)
-    elif challenge_type == "debugging":
-        return generate_debugging(topic, topic_text, difficulty)
-    elif challenge_type == "coding":
-        return generate_coding(topic, topic_text, difficulty)
-    else:
-        logger.warning(f"Unknown challenge type: {challenge_type}")
-        return None
+    except Exception as e:
+        logger.error(f"Error in topic extraction: {e}")
+        return []
 
+def validate_topics(topics: List[str]) -> List[str]:
+    """Validate and clean extracted topics"""
+    valid_topics = []
+    
+    for topic in topics:
+        if not topic or not isinstance(topic, str):
+            continue
+        
+        topic = topic.strip()
+        
+        # Skip empty or very short topics
+        if len(topic) < 3:
+            continue
+        
+        # Skip very long topics
+        if len(topic) > 50:
+            continue
+        
+        # Skip topics that are just numbers
+        if topic.isdigit():
+            continue
+        
+        # Clean up the topic
+        topic = topic.replace('_', ' ').title()
+        
+        # Add if not already present
+        if topic not in valid_topics:
+            valid_topics.append(topic)
+    
+    logger.info(f"Final extracted {len(valid_topics)} topics: {valid_topics}")
+    return valid_topics[:10]  # Limit to 10 topics
 
-# Load model when running under Flask
-if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
-    logger.info("Flask detected, starting model loading in background")
-    load_model_in_background()
+# Backward compatibility functions
+def generate_with_llm(content: str, difficulty: str = "medium", topic: str = "programming") -> List[Dict[str, Any]]:
+    """Backward compatibility function for generating challenges"""
+    challenges = []
+    
+    challenge_types = ["multiple-choice", "debugging", "fill-in-the-blank"]
+    
+    for challenge_type in challenge_types:
+        challenge = generate_single_challenge(content, challenge_type, difficulty, topic)
+        if challenge:
+            challenges.append(challenge)
+    
+    return challenges
 

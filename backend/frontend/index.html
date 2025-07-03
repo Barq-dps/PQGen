@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PQGen · Programming Challenge Generator</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+    <!-- Navigation Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <!-- Logo -->
+                <div class="logo">
+                    <i class="fas fa-bolt logo-icon"></i>
+                    <span class="logo-text">PQGen</span>
+                </div>
+                
+                <!-- Navigation -->
+                <nav class="nav">
+                    <a href="#" class="nav-link active">Home</a>
+                    <a href="#challenges" class="nav-link">Challenges</a>
+                    <a href="#about" class="nav-link">About</a>
+                    <a href="#profile" class="nav-link">Profile</a>
+                </nav>
+                
+                <!-- Theme Toggle -->
+                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                    <i class="fas fa-sun"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div class="container">
+            <!-- Hero Section -->
+            <section class="hero">
+                <h1 class="hero-title">Programming Challenge Generator</h1>
+                <p class="hero-subtitle">
+                    Upload a PDF document to generate personalized programming<br>
+                    challenges using AI
+                </p>
+            </section>
+
+            <!-- Upload Section -->
+            <section id="upload-section" class="section">
+                <div class="card">
+                    <h2 class="section-title">Upload PDF Document</h2>
+                    
+                    <div class="upload-area" id="upload-area">
+                        <div class="upload-content" id="upload-content">
+                            <!-- Default Upload State -->
+                            <div class="upload-prompt" id="upload-prompt">
+                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                                <h3>Drop your PDF file here</h3>
+                                <p>or click to browse</p>
+                                <button type="button" class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                                    Choose File
+                                </button>
+                            </div>
+                            
+                            <!-- File Selected State -->
+                            <div class="file-selected hidden" id="file-selected">
+                                <i class="fas fa-file-pdf file-icon"></i>
+                                <div class="file-name" id="file-name">python_tutorial.pdf</div>
+                                <div class="file-status" id="file-status">Ready to generate challenges</div>
+                                <button type="button" class="btn btn-processing" id="process-btn">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    Uploading and processing...
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <input type="file" id="file-input" accept=".pdf" hidden>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Enhanced Loading Section -->
+            <section id="enhanced-loading" class="section hidden">
+                <div class="card">
+                    <div class="loading-container">
+                        <div class="loading-spinner"></div>
+                        <div id="loading-message" class="loading-message">Processing your document...</div>
+                        <div class="loading-details">
+                            <div class="progress-bar">
+                                <div id="loading-progress-fill" class="progress-fill"></div>
+                            </div>
+                            <div id="loading-progress-text" class="progress-text">0%</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Topic Selection Section -->
+            <section id="topic-section" class="section hidden">
+                <div class="card">
+                    <h2 class="section-title">Select Topics for Challenge Generation</h2>
+                    <p class="section-subtitle">Choose the topics you want to generate programming challenges for:</p>
+                    
+                    <div class="difficulty-selector">
+                        <label for="difficulty-select">Default Difficulty:</label>
+                        <select id="difficulty-select" class="difficulty-select">
+                            <option value="easy">Easy</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="hard">Hard</option>
+                        </select>
+                    </div>
+
+                    <div id="topics-list" class="topics-list">
+                        <!-- Topics will be populated here -->
+                    </div>
+
+                    <div class="topic-actions">
+                        <button id="select-all-topics" class="btn btn-secondary">Select All</button>
+                        <button id="clear-topics" class="btn btn-secondary">Clear All</button>
+                        <button id="generate-challenges" class="btn btn-primary" disabled>
+                            Generate Challenges
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Challenge Generation Progress -->
+            <section id="generation-progress" class="section hidden">
+                <div class="card">
+                    <h2 class="section-title">Generating Your Challenges</h2>
+                    <div class="generation-status">
+                        <div class="generation-spinner"></div>
+                        <div id="generation-message" class="generation-message">Starting challenge generation...</div>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="generation-progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div id="generation-progress-text" class="progress-text">0%</div>
+                    <div id="generation-details" class="generation-details">
+                        <!-- Detailed progress will be shown here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Challenges Section -->
+            <section id="challenges-section" class="section hidden">
+                <div class="card">
+                    <div class="challenges-header">
+                        <h2 class="section-title">Your Programming Challenges</h2>
+                        <div class="challenges-stats">
+                            <span id="challenges-count">0 challenges</span>
+                            <span id="challenges-solved">0 solved</span>
+                        </div>
+                    </div>
+
+                    <div class="challenges-filters">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="multiple-choice">Multiple Choice</button>
+                        <button class="filter-btn" data-filter="debugging">Debugging</button>
+                        <button class="filter-btn" data-filter="fill-in-the-blank">Fill in the Blank</button>
+                    </div>
+
+                    <div id="challenges-list" class="challenges-list">
+                        <!-- Challenges will be populated here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <section id="error-section" class="section hidden">
+                <div class="card error-card">
+                    <div class="error-container">
+                        <i class="fas fa-exclamation-triangle error-icon"></i>
+                        <h3>Something went wrong</h3>
+                        <p class="error-message" id="error-message">
+                            An error occurred while processing your request. Please try again.
+                        </p>
+                        <button class="btn btn-primary" onclick="location.reload()">
+                            Try Again
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Challenge Modal -->
+    <div id="challenge-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Challenge</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Challenge content will be inserted here -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-hint">
+                    <i class="fas fa-lightbulb"></i>
+                    Hint
+                </button>
+                <button class="btn btn-primary" id="modal-submit">
+                    Submit Answer
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2024 PQGen - Programming Challenge Generator</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="script.js"></script>
+</body>
+</html>
+
