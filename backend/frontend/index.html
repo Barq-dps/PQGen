@@ -1,232 +1,423 @@
 <!DOCTYPE html>
 <html lang="en" data-theme="dark">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PQGen · Programming Challenge Generator</title>
-    
-    <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    
-    <!-- Stylesheet -->
+
+    <!-- Pixel font & main stylesheet -->
+    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="styles.css">
     
-    <!-- Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Navigation button styles */
+        .nav-btn {
+            background: transparent;
+            border: 2px solid #333;
+            color: #cccccc;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: inherit;
+            font-size: 14px;
+        }
+        
+        .nav-btn:hover {
+            border-color: #00ff41;
+            color: #00ff41;
+            background: rgba(0, 255, 65, 0.1);
+        }
+        
+        .nav-btn.active {
+            border-color: #00ff41;
+            color: #00ff41;
+            background: rgba(0, 255, 65, 0.2);
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 12px;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .nav-links li {
+            margin: 0;
+        }
+        
+        /* Horizontal avatar options */
+        .avatar-options.horizontal {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .avatar-option.small {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .avatar-option.small:hover {
+            border-color: #00ff41;
+            transform: scale(1.1);
+        }
+        
+        .avatar-option.small.active {
+            border-color: #00ff41;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
+        }
+        
+        /* Favorites section styles */
+        .favorites-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 32px;
+        }
+        
+        .favorites-container h2 {
+            color: #00ff41;
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        
+        .challenges-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 24px;
+        }
+        
+        .favorite-item {
+            border: 2px solid var(--border-color, #00ff41);
+            border-radius: 12px;
+            padding: 20px;
+            background: rgba(26, 26, 26, 0.8);
+            transition: all 0.3s ease;
+        }
+        
+        .favorite-item:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0, 255, 65, 0.2);
+        }
+        
+        .favorite-date {
+            font-size: 12px;
+            color: #ffd700;
+            margin-left: auto;
+        }
+        
+        .challenge-preview {
+            margin: 12px 0;
+            color: #cccccc;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 64px 32px;
+            color: #888;
+        }
+        
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+        }
+        
+        .empty-state h3 {
+            color: #cccccc;
+            margin-bottom: 8px;
+        }
+    </style>
 </head>
 
 <body>
-    <!-- Navigation Header -->
-    <header class="header">
-        <div class="container">
-            <div class="header-content">
-                <!-- Logo -->
-                <div class="logo">
-                    <i class="fas fa-bolt logo-icon"></i>
-                    <span class="logo-text">PQGen</span>
-                </div>
-                
-                <!-- Navigation -->
-                <nav class="nav">
-                    <a href="#" class="nav-link active">Home</a>
-                    <a href="#challenges" class="nav-link">Challenges</a>
-                    <a href="#about" class="nav-link">About</a>
-                    <a href="#profile" class="nav-link">Profile</a>
-                </nav>
-                
-                <!-- Theme Toggle -->
-                <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
-                    <i class="fas fa-sun"></i>
-                </button>
-            </div>
+    <!-- ─────── NAVBAR ─────── -->
+    <nav class="navbar">
+        <div class="nav-logo">
+            <span class="nav-icon">⚡</span>
+            <span class="nav-brand">PQGen</span>
         </div>
+
+        <ul class="nav-links">
+            <li><button class="nav-btn active" id="nav-upload" data-section="upload">Upload</button></li>
+            <li><button class="nav-btn" id="nav-challenges" data-section="display">Challenges</button></li>
+            <li><button class="nav-btn" id="nav-favorites" data-section="favorites">Favorites</button></li>
+            <li><button class="nav-btn" id="nav-profile" data-section="profile">Profile</button></li>
+        </ul>
+
+        <div class="nav-actions">
+            <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+                <i class="fas fa-sun"></i>
+            </button>
+            <button class="btn btn-secondary" id="auth-button">Login / Signup</button>
+        </div>
+    </nav>
+
+    <!-- ─────── HERO HEADER ─────── -->
+    <header class="hero">
+        <h1 class="hero-title">Programming Challenge Generator</h1>
+        <p class="hero-subtitle">
+            Upload a PDF document to generate personalized programming<br />
+            challenges using AI
+        </p>
     </header>
 
-    <!-- Main Content -->
-    <main class="main">
-        <div class="container">
-            <!-- Hero Section -->
-            <section class="hero">
-                <h1 class="hero-title">Programming Challenge Generator</h1>
-                <p class="hero-subtitle">
-                    Upload a PDF document to generate personalized programming<br>
-                    challenges using AI
-                </p>
-            </section>
+    <!-- ─────── MAIN CONTENT ─────── -->
+    <main class="upload-wrapper">
 
-            <!-- Upload Section -->
-            <section id="upload-section" class="section">
-                <div class="card">
-                    <h2 class="section-title">Upload PDF Document</h2>
-                    
-                    <div class="upload-area" id="upload-area">
-                        <div class="upload-content" id="upload-content">
-                            <!-- Default Upload State -->
-                            <div class="upload-prompt" id="upload-prompt">
-                                <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                                <h3>Drop your PDF file here</h3>
-                                <p>or click to browse</p>
-                                <button type="button" class="btn btn-primary" onclick="document.getElementById('file-input').click()">
-                                    Choose File
-                                </button>
-                            </div>
-                            
-                            <!-- File Selected State -->
-                            <div class="file-selected hidden" id="file-selected">
-                                <i class="fas fa-file-pdf file-icon"></i>
-                                <div class="file-name" id="file-name">python_tutorial.pdf</div>
-                                <div class="file-status" id="file-status">Ready to generate challenges</div>
-                                <button type="button" class="btn btn-processing" id="process-btn">
-                                    <i class="fas fa-spinner fa-spin"></i>
-                                    Uploading and processing...
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <input type="file" id="file-input" accept=".pdf" hidden>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Enhanced Loading Section -->
-            <section id="enhanced-loading" class="section hidden">
-                <div class="card">
-                    <div class="loading-container">
-                        <div class="loading-spinner"></div>
-                        <div id="loading-message" class="loading-message">Processing your document...</div>
-                        <div class="loading-details">
-                            <div class="progress-bar">
-                                <div id="loading-progress-fill" class="progress-fill"></div>
-                            </div>
-                            <div id="loading-progress-text" class="progress-text">0%</div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Topic Selection Section -->
-            <section id="topic-section" class="section hidden">
-                <div class="card">
-                    <h2 class="section-title">Select Topics for Challenge Generation</h2>
-                    <p class="section-subtitle">Choose the topics you want to generate programming challenges for:</p>
-                    
-                    <div class="difficulty-selector">
-                        <label for="difficulty-select">Default Difficulty:</label>
-                        <select id="difficulty-select" class="difficulty-select">
-                            <option value="easy">Easy</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="hard">Hard</option>
-                        </select>
-                    </div>
-
-                    <div id="topics-list" class="topics-list">
-                        <!-- Topics will be populated here -->
-                    </div>
-
-                    <div class="topic-actions">
-                        <button id="select-all-topics" class="btn btn-secondary">Select All</button>
-                        <button id="clear-topics" class="btn btn-secondary">Clear All</button>
-                        <button id="generate-challenges" class="btn btn-primary" disabled>
-                            Generate Challenges
+        <!-- ═══════ UPLOAD SECTION ═══════ -->
+        <section id="upload-section" class="section">
+            <div class="upload-card">
+                <h2 class="upload-heading">Upload Your PDF Document</h2>
+                
+                <div class="upload-zone" id="upload-area">
+                    <div class="upload-inner">
+                        <div class="file-icon">📄</div>
+                        <h3>Drop your PDF here or click to browse</h3>
+                        <p>Supports PDF files up to 10MB</p>
+                        <button class="btn btn-primary" type="button">
+                            <i class="fas fa-upload"></i>
+                            Choose File
                         </button>
                     </div>
                 </div>
-            </section>
 
-            <!-- Challenge Generation Progress -->
-            <section id="generation-progress" class="section hidden">
-                <div class="card">
-                    <h2 class="section-title">Generating Your Challenges</h2>
-                    <div class="generation-status">
-                        <div class="generation-spinner"></div>
-                        <div id="generation-message" class="generation-message">Starting challenge generation...</div>
+                <input type="file" id="file-input" accept=".pdf" style="display: none;" />
+                
+                <div id="file-name" class="file-name hidden"></div>
+                <div id="file-state" class="file-state"></div>
+                <button id="upload-btn" class="btn btn-secondary hidden">
+                    <i class="fas fa-times"></i>
+                    Cancel Upload
+                </button>
+            </div>
+        </section>
+
+        <!-- ═══════ LOADING SECTION ═══════ -->
+        <section id="enhanced-loading" class="section hidden">
+            <div class="loading-card">
+                <h2>Extracting Topics from PDF</h2>
+                <p>Please wait while we analyze your document...</p>
+                
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
                     </div>
+                    <div class="progress-info">
+                        <span id="progress-message">Starting extraction...</span>
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════ TOPIC SELECTION ═══════ -->
+        <section id="topic-selection" class="section hidden">
+            <div class="topics-card">
+                <h2>Select Topics for Challenge Generation</h2>
+                <p>Choose the topics you'd like to generate programming challenges for:</p>
+                
+                <div class="topics-controls">
+                    <button id="select-all-topics" class="btn btn-secondary">
+                        <i class="fas fa-check-double"></i>
+                        Select All
+                    </button>
+                    <button id="clear-topics" class="btn btn-secondary">
+                        <i class="fas fa-times"></i>
+                        Clear All
+                    </button>
+                </div>
+
+                <div id="topics-list" class="topics-list">
+                    <!-- Topics will be populated dynamically -->
+                </div>
+
+                <div class="topics-actions">
+                    <button id="generate-challenges-btn" class="btn btn-primary" disabled>
+                        <i class="fas fa-magic"></i>
+                        Generate Challenges
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════ CHALLENGE GENERATION PROGRESS ═══════ -->
+        <section id="challenge-generation" class="section hidden">
+            <div class="generation-card">
+                <h2>Generating Programming Challenges</h2>
+                <p>Creating personalized challenges based on your selected topics...</p>
+                
+                <div class="progress-container">
                     <div class="progress-bar">
                         <div id="generation-progress-fill" class="progress-fill"></div>
                     </div>
-                    <div id="generation-progress-text" class="progress-text">0%</div>
-                    <div id="generation-details" class="generation-details">
-                        <!-- Detailed progress will be shown here -->
+                    <div class="progress-info">
+                        <span id="generation-message">Initializing challenge generation...</span>
+                        <span id="generation-progress-text">0%</span>
                     </div>
                 </div>
-            </section>
+            </div>
+        </section>
 
-            <!-- Challenges Section -->
-            <section id="challenges-section" class="section hidden">
-                <div class="card">
-                    <div class="challenges-header">
-                        <h2 class="section-title">Your Programming Challenges</h2>
-                        <div class="challenges-stats">
-                            <span id="challenges-count">0 challenges</span>
-                            <span id="challenges-solved">0 solved</span>
-                        </div>
-                    </div>
-
-                    <div class="challenges-filters">
-                        <button class="filter-btn active" data-filter="all">All</button>
-                        <button class="filter-btn" data-filter="multiple-choice">Multiple Choice</button>
-                        <button class="filter-btn" data-filter="debugging">Debugging</button>
-                        <button class="filter-btn" data-filter="fill-in-the-blank">Fill in the Blank</button>
-                    </div>
-
-                    <div id="challenges-list" class="challenges-list">
-                        <!-- Challenges will be populated here -->
+        <!-- ═══════ CHALLENGES DISPLAY ═══════ -->
+        <section id="challenge-display" class="section hidden">
+            <div class="challenges-container">
+                <div class="challenges-header">
+                    <h3>Your Programming Challenges</h3>
+                    <div class="challenges-stats">
+                        <span id="challenges-count">0 challenges</span>
+                        <span id="challenges-solved">0 solved</span>
                     </div>
                 </div>
-            </section>
 
-            <!-- Error Section -->
-            <section id="error-section" class="section hidden">
-                <div class="card error-card">
-                    <div class="error-container">
-                        <i class="fas fa-exclamation-triangle error-icon"></i>
-                        <h3>Something went wrong</h3>
-                        <p class="error-message" id="error-message">
-                            An error occurred while processing your request. Please try again.
-                        </p>
-                        <button class="btn btn-primary" onclick="location.reload()">
-                            Try Again
-                        </button>
+                <div class="challenges-filters">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="multiple-choice">Multiple Choice</button>
+                    <button class="filter-btn" data-filter="debugging">Debugging</button>
+                    <button class="filter-btn" data-filter="fill-in-the-blank">Fill in Blank</button>
+                </div>
+
+                <div id="challenge-container" class="challenges-list">
+                    <!-- Challenges will be populated dynamically from PDF -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════ PROFILE SECTION ═══════ -->
+        <section id="profile-section" class="section hidden">
+            <div class="profile-card">
+                <h2>Your Profile</h2>
+                <div class="profile-info">
+                    <img id="profile-avatar" src="" alt="User Avatar" class="profile-avatar">
+                    <div class="profile-details">
+                        <p><strong>Display Name:</strong> <span id="profile-display-name"></span></p>
+                        <p><strong>Email:</strong> <span id="profile-email"></span></p>
+                        <p><strong>Challenges Solved:</strong> <span id="profile-solved-count">0</span></p>
+                        <p><strong>Favorite Challenges:</strong> <span id="profile-favorites-count">0</span></p>
+                        <p><strong>Uploaded Documents:</strong> <span id="profile-uploads-count">0</span></p>
                     </div>
                 </div>
-            </section>
-        </div>
+                <button class="btn btn-primary" id="logout-button">Logout</button>
+            </div>
+        </section>
+
+        <!-- ═══════ FAVORITES SECTION ═══════ -->
+        <section id="favorites-section" class="section hidden">
+            <div class="favorites-container">
+                <h2>Your Favorite Challenges</h2>
+                <div id="favorites-list" class="challenges-grid">
+                    <!-- Favorite challenges will be populated here -->
+                </div>
+                <div id="no-favorites" class="empty-state hidden">
+                    <div class="empty-icon">⭐</div>
+                    <h3>No Favorites Yet</h3>
+                    <p>Star some challenges to see them here!</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════ ERROR SECTION ═══════ -->
+        <section id="error-section" class="section hidden">
+            <div class="error-card">
+                <div class="error-icon">⚠️</div>
+                <h2>Something went wrong</h2>
+                <p id="error-message">An unexpected error occurred.</p>
+                <button id="retry-button" class="btn btn-primary">
+                    <i class="fas fa-redo"></i>
+                    Try Again
+                </button>
+            </div>
+        </section>
+
     </main>
 
-    <!-- Challenge Modal -->
+    <!-- ═══════ CHALLENGE MODAL ═══════ -->
     <div id="challenge-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modal-title">Challenge</h3>
-                <button class="modal-close" id="modal-close">
-                    <i class="fas fa-times"></i>
-                </button>
+                <h4 id="modal-title">Challenge Details</h4>
+                <button class="modal-close" id="modal-close">&times;</button>
             </div>
             <div class="modal-body" id="modal-body">
-                <!-- Challenge content will be inserted here -->
+                <!-- Challenge content will be populated dynamically -->
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" id="modal-hint">
+                <button id="modal-hint" class="btn btn-secondary">
                     <i class="fas fa-lightbulb"></i>
-                    Hint
+                    Show Hint
                 </button>
-                <button class="btn btn-primary" id="modal-submit">
+                <button id="modal-submit" class="btn btn-primary">
+                    <i class="fas fa-check"></i>
                     Submit Answer
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="container">
-            <p>&copy; 2024 PQGen - Programming Challenge Generator</p>
+    <!-- ═══════ AUTH MODAL ═══════ -->
+    <div id="auth-modal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="auth-modal-title">Login / Signup</h4>
+                <button class="modal-close" id="auth-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="auth-form">
+                    <div class="form-group">
+                        <label for="auth-email">Email:</label>
+                        <input type="email" id="auth-email" required>
+                    </div>
+                    <div class="form-group" id="auth-username-group">
+                        <label for="auth-username">Display Name:</label>
+                        <input type="text" id="auth-username">
+                    </div>
+                    <div class="form-group">
+                        <label for="auth-password">Password:</label>
+                        <input type="password" id="auth-password" required>
+                    </div>
+                    <div class="form-group" id="auth-avatar-group">
+                        <label>Choose Avatar:</label>
+                        <div class="avatar-options horizontal">
+                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar1" data-avatar="avatar1" class="avatar-option small active" alt="Avatar 1">
+                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar2" data-avatar="avatar2" class="avatar-option small" alt="Avatar 2">
+                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar3" data-avatar="avatar3" class="avatar-option small" alt="Avatar 3">
+                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar4" data-avatar="avatar4" class="avatar-option small" alt="Avatar 4">
+                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar5" data-avatar="avatar5" class="avatar-option small" alt="Avatar 5">
+                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar6" data-avatar="avatar6" class="avatar-option small" alt="Avatar 6">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="auth-submit-button">Login</button>
+                </form>
+                <p class="auth-switch">
+                    Don't have an account? <a href="#" id="switch-to-signup">Sign Up</a>
+                </p>
+                <p class="auth-switch">
+                    Already have an account? <a href="#" id="switch-to-login">Login</a>
+                </p>
+            </div>
         </div>
+    </div>
+
+    <!-- ═══════ FOOTER ═══════ -->
+    <footer style="text-align: center; padding: 32px; background: #1a1a1a; border-top: 2px solid #333333; color: #cccccc; margin-top: 64px;">
+        <p>&copy; 2024 PQGen - Programming Challenge Generator</p>
     </footer>
 
-    <!-- JavaScript -->
+    <!-- ═══════ JAVASCRIPT ═══════ -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
     <script src="script.js"></script>
 </body>
 </html>
+
 

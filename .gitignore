@@ -3,3 +3,12 @@
 frontend/static/css/frontend_with_auth_and_gamification.css
 frontend/static/js/firebase_auth_and_gamification.js
 backend/firebase_service_account.json
+.env
+/venv
+.firebaserc
+backend/firestore.rules
+cors.json
+firebase.json
+firestore.indexes.json
+firestore.rules
+storage.rules

@@ -591,11 +591,15 @@ def get_challenges(doc_id):
         
         challenges = document_challenges[doc_id]
         
-        # Add current state for each challenge
+        # 1) Mark each challenge as AI-generated
         for challenge in challenges:
-            challenge_id = challenge.get('id')
-            if challenge_id in challenge_states:
-                challenge['state'] = challenge_states[challenge_id]
+            challenge['ai_generated'] = True
+
+        # 2) Add current state for each challenge
+        for challenge in challenges:
+            cid = challenge.get('id')
+            if cid in challenge_states:
+                challenge['state'] = challenge_states[cid]
             else:
                 challenge['state'] = {
                     'status': 'unsolved',
@@ -611,8 +615,9 @@ def get_challenges(doc_id):
         })
         
     except Exception as e:
-        logger.error(f"Error getting challenges for {doc_id}: {str(e)}")
-        return jsonify({'error': f'Failed to get challenges: {str(e)}'}), 500
+        logger.error(f"Error getting challenges for {doc_id}: {e}")
+        return jsonify({'error': f'Failed to get challenges: {e}'}), 500
+
 
 @app.route('/api/challenges/<challenge_id>/attempt', methods=['POST'])
 def submit_attempt(challenge_id):

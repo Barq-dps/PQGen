@@ -290,17 +290,36 @@ Make sure the JSON is valid and complete."""
 def generate_debugging_challenge(content: str, difficulty: str, topic: str) -> Dict[str, Any]:
     """Generate debugging challenge with actual buggy code"""
     
-    prompt = f"""Create a debugging challenge about "{topic}" with {difficulty} difficulty.
+    # Define different debugging scenarios to ensure variety
+    debugging_scenarios = [
+        "data processing and validation",
+        "file operations and error handling", 
+        "mathematical calculations and algorithms",
+        "string manipulation and parsing",
+        "list/array operations and indexing",
+        "object-oriented programming and classes",
+        "function definitions and parameters",
+        "loop logic and iteration",
+        "conditional statements and branching",
+        "exception handling and try-catch blocks"
+    ]
+    
+    # Select a scenario based on topic or use a random one
+    import random
+    scenario = random.choice(debugging_scenarios)
+    
+    prompt = f"""Create a debugging challenge about "{topic}" with {difficulty} difficulty, focusing on {scenario}.
 
 Content context: {content[:1500]}
 
 Requirements:
-1. Write actual Python code that contains a specific, realistic bug
-2. The bug should be related to {topic}
-3. Provide the expected output vs actual output
-4. Include the type of bug (syntax_error, logic_error, runtime_error)
-5. Provide a clear explanation of what's wrong and how to fix it
-6. Make the code runnable (not just pseudocode)
+1. Write actual Python code that contains a specific, realistic bug related to {scenario}
+2. The bug should be related to {topic} and {scenario}
+3. Use function names and variable names related to {scenario} (e.g., process_data, validate_input, calculate_result)
+4. Provide a clear description of what the code should do
+5. Include the type of bug (syntax_error, logic_error, runtime_error)
+6. Provide a clear explanation of what's wrong and how to fix it
+7. Make the code runnable and realistic (not just pseudocode)
 
 Common bug types to use:
 - Syntax errors: wrong operators (= vs ==), missing colons, incorrect indentation
@@ -309,22 +328,23 @@ Common bug types to use:
 
 Return ONLY a JSON object with this exact structure:
 {{
-    "question": "Find and fix the bug in this code that should [describe what it should do]",
-    "code_stub": "def function_name():\\n    # Actual buggy Python code here\\n    pass",
+    "question": "Find and fix the bug in this code that should [describe what it should do related to {scenario}]",
+    "code_stub": "def process_function():\\n    # Actual buggy Python code here related to {scenario}\\n    pass",
     "bug_type": "syntax_error",
     "expected_output": "What the output should be",
     "actual_output": "What the buggy code actually produces (or error message)",
-    "fix_explanation": "Explanation of the bug and how to fix it",
+    "correct_answer": "Clear explanation of the bug and how to fix it",
+    "fix_explanation": "Detailed explanation of the bug and how to fix it",
     "topic": "{topic}",
     "difficulty": "{difficulty}"
 }}
 
-Make sure the code_stub contains REAL, RUNNABLE Python code with an actual bug."""
+Make sure the code_stub contains REAL, RUNNABLE Python code with an actual bug related to {scenario}."""
 
     messages = [
         {
             "role": "system",
-            "content": "You are an expert programming instructor who creates realistic debugging exercises. Always include actual buggy code that students can run and debug. Respond with valid JSON only."
+            "content": f"You are an expert programming instructor who creates realistic debugging exercises focused on {scenario}. Always include actual buggy code that students can run and debug. Respond with valid JSON only."
         },
         {
             "role": "user",
@@ -339,7 +359,7 @@ Make sure the code_stub contains REAL, RUNNABLE Python code with an actual bug."
         return {}
     
     # Parse the JSON response
-    challenge = extract_and_parse_json(response, ["question", "code_stub", "bug_type", "expected_output", "actual_output", "fix_explanation"])
+    challenge = extract_and_parse_json(response, ["question", "code_stub", "bug_type", "expected_output", "actual_output", "fix_explanation", "correct_answer"])
     
     if not challenge:
         logger.warning("Failed to parse debugging challenge JSON")
@@ -369,52 +389,67 @@ Make sure the code_stub contains REAL, RUNNABLE Python code with an actual bug."
     challenge.setdefault("expected_output", "See code comments for expected behavior")
     challenge.setdefault("actual_output", "Code contains a bug")
     challenge.setdefault("fix_explanation", "Analyze the code to find and fix the bug")
+    challenge.setdefault("correct_answer", challenge.get("fix_explanation", "Analyze the code to find and fix the bug"))
     
     return challenge
 
 def generate_fill_in_blank_challenge(content: str, difficulty: str, topic: str) -> Dict[str, Any]:
     """Generate fill-in-the-blank challenge with proper ____ formatting"""
     
-    prompt = f"""Create a fill-in-the-blank programming exercise about "{topic}" with {difficulty} difficulty.
+    # Define different algorithmic scenarios to ensure variety
+    algorithmic_scenarios = [
+        "recursive algorithms and base cases",
+        "sorting algorithms and comparisons", 
+        "search algorithms and binary operations",
+        "graph traversal and path finding",
+        "dynamic programming and memoization",
+        "tree operations and node manipulation",
+        "hash table operations and key-value pairs",
+        "stack and queue data structures",
+        "linked list operations and pointers",
+        "mathematical computations and formulas"
+    ]
+    
+    # Select a scenario based on topic or use a random one
+    import random
+    scenario = random.choice(algorithmic_scenarios)
+    
+    prompt = f"""Create a fill-in-the-blank programming exercise about "{topic}" with {difficulty} difficulty, focusing on {scenario}.
 
 Content context: {content[:1500]}
 
 Requirements:
-1. Create Python code with 2-4 blanks marked with exactly "____" (4 underscores)
-2. Each blank should test understanding of {topic}
-3. Provide multiple choice options for each blank
-4. Include the complete working solution
-5. Add explanations for each blank
+1. Provide Python code containing exactly 2–4 blanks, each marked with "____" (4 underscores)
+2. Focus on {scenario} and use appropriate function names (e.g., binary_search, merge_sort, dfs_traversal)
+3. Each blank should test understanding of {topic} and {scenario}
+4. For every blank, supply multiple-choice options and indicate the correct one
+5. Include the full working solution
+6. Explain each blank in the context of {scenario}
+7. Use realistic algorithm implementations, not simple examples
 
-Return ONLY a JSON object with this exact structure:
+Return **only** a JSON object matching this schema:
 {{
-    "question": "Complete the code by filling in the blanks",
-    "code_with_blanks": "def example():\\n    x = ____\\n    for i in ____:\\n        print(____)",
+    "question": "Complete the {scenario} implementation by filling in the blanks",
+    "code_with_blanks": "def algorithm_function():\\n    # Python code with ____ placeholders for {scenario}\\n    pass",
     "blanks": [
         {{
             "blank_number": 1,
-            "correct_answer": "[]",
-            "options": ["[]", "{{}}", "()", "None"],
-            "explanation": "Initialize an empty list"
-        }},
-        {{
-            "blank_number": 2,
-            "correct_answer": "range(5)",
-            "options": ["range(5)", "5", "[1,2,3,4,5]", "list(5)"],
-            "explanation": "Create a range of numbers"
+            "correct_answer": "specific_value",
+            "options": ["option1", "option2", "option3", "option4"],
+            "explanation": "Why this value is correct for {scenario}"
         }}
     ],
-    "complete_solution": "def example():\\n    x = []\\n    for i in range(5):\\n        print(i)",
+    "complete_solution": "def algorithm_function():\\n    # Complete working code\\n    pass",
     "topic": "{topic}",
     "difficulty": "{difficulty}"
 }}
 
-Make sure to use exactly "____" (4 underscores) for each blank."""
+Use exactly "____" for each blank placeholder. Focus on {scenario} concepts."""
 
     messages = [
         {
             "role": "system",
-            "content": "You are an expert programming instructor creating fill-in-the-blank exercises. Use exactly 4 underscores (____) for each blank. Respond with valid JSON only."
+            "content": f"You are an expert programming instructor creating fill-in-the-blank exercises focused on {scenario}. Use exactly 4 underscores (____) for each blank. Create realistic algorithm implementations. Respond with valid JSON only."
         },
         {
             "role": "user",
