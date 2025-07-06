@@ -1466,11 +1466,20 @@ auth.onAuthStateChanged(async (user) => {
       authModal.classList.add("hidden");
       authModal.classList.remove("show");
       
-      // Update auth button to show Profile
-      authButton.textContent = "Profile";
-      authButton.onclick = () => {
-        showSection("profile");
-        updateProfileUI();
+      // Update auth button to show Logout
+      authButton.textContent = "Logout";
+      authButton.setAttribute("data-state", "logout");
+      authButton.onclick = async () => {
+        authButton.classList.add("loading");
+        try {
+          await auth.signOut();
+          console.log("User signed out successfully");
+        } catch (error) {
+          console.error("Error signing out:", error);
+          alert("Failed to sign out. Please try again.");
+        } finally {
+          authButton.classList.remove("loading");
+        }
       };
       
       // Update profile UI with fetched data
@@ -1497,10 +1506,19 @@ auth.onAuthStateChanged(async (user) => {
       
       // Still update UI even if Firestore fails
       authModal.classList.add("hidden");
-      authButton.textContent = "Profile";
-      authButton.onclick = () => {
-        showSection("profile");
-        updateProfileUI();
+      authButton.textContent = "Logout";
+      authButton.setAttribute("data-state", "logout");
+      authButton.onclick = async () => {
+        authButton.classList.add("loading");
+        try {
+          await auth.signOut();
+          console.log("User signed out successfully");
+        } catch (error) {
+          console.error("Error signing out:", error);
+          alert("Failed to sign out. Please try again.");
+        } finally {
+          authButton.classList.remove("loading");
+        }
       };
       
       showSection("upload");
@@ -1517,6 +1535,7 @@ auth.onAuthStateChanged(async (user) => {
     
     // Update auth button to show Login/Signup
     authButton.textContent = "Login / Signup";
+    authButton.setAttribute("data-state", "login");
     authButton.onclick = () => {
       authModal.classList.remove("hidden");
       authModal.classList.add("show");
