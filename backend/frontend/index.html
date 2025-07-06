@@ -5,10 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PQGen · Programming Challenge Generator</title>
 
-    <!-- Pixel font & main stylesheet -->
-    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com" >
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link
+  rel="preload"
+  as="style"
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+  onload="this.rel='stylesheet'"
+>
+<noscript>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+    rel="stylesheet"
+  >
+</noscript>
+
+<link rel="stylesheet" href="styles.css">
     
     <style>
         /* Navigation button styles */
@@ -155,7 +167,7 @@
 
         <div class="nav-actions">
             <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
-                <i class="fas fa-sun"></i>
+                🌙
             </button>
             <button class="btn btn-secondary" id="auth-button">Login / Signup</button>
         </div>
@@ -293,22 +305,64 @@
 
         <!-- ═══════ PROFILE SECTION ═══════ -->
         <section id="profile-section" class="section hidden">
-            <div class="profile-card">
-                <h2>Your Profile</h2>
+            <div class="profile-bar">
+                <img id="profile-avatar" class="profile-avatar-sm" src="" alt="User Avatar">
                 <div class="profile-info">
-                    <img id="profile-avatar" src="" alt="User Avatar" class="profile-avatar">
-                    <div class="profile-details">
-                        <p><strong>Display Name:</strong> <span id="profile-display-name"></span></p>
-                        <p><strong>Email:</strong> <span id="profile-email"></span></p>
-                        <p><strong>Challenges Solved:</strong> <span id="profile-solved-count">0</span></p>
-                        <p><strong>Favorite Challenges:</strong> <span id="profile-favorites-count">0</span></p>
-                        <p><strong>Uploaded Documents:</strong> <span id="profile-uploads-count">0</span></p>
+                    <span id="profile-display-name" class="profile-name"></span>
+                    <span id="profile-email" class="profile-email"></span>
+                    <span class="profile-stats">
+                        <strong id="profile-solved-count">0</strong> /
+                        <strong id="profile-generated-count">0</strong> challenges solved
+                    </span>
+                </div>
+                <button id="logout-button" class="btn btn-secondary logout-btn">Logout</button>
+            </div>
+            
+            <!-- Profile Editing Section -->
+            <div class="profile-editing-section">
+                <h3>Edit Profile</h3>
+                
+                <!-- Display Name Editing -->
+                <div class="profile-edit-group">
+                    <label for="profile-edit-name">Display Name:</label>
+                    <div class="profile-edit-input-group">
+                        <input type="text" id="profile-edit-name" class="profile-edit-input" placeholder="Enter your display name">
+                        <button id="save-display-name" class="btn btn-primary profile-save-btn">
+                            <i class="fas fa-save"></i> Save
+                        </button>
                     </div>
                 </div>
-                <button class="btn btn-primary" id="logout-button">Logout</button>
+                
+                <!-- Avatar Selection -->
+                <div class="profile-edit-group">
+                    <label>Choose Avatar:</label>
+                    <div class="avatar-options horizontal" id="profile-avatar-options">
+                        <img src="avatar1.png" data-avatar="avatar1" class="avatar-option small" alt="Avatar 1">
+                        <img src="avatar2.png" data-avatar="avatar2" class="avatar-option small" alt="Avatar 2">
+                        <img src="avatar3.png" data-avatar="avatar3" class="avatar-option small" alt="Avatar 3">
+                        <img src="avatar4.png" data-avatar="avatar4" class="avatar-option small" alt="Avatar 4">
+                        <img src="avatar5.png" data-avatar="avatar5" class="avatar-option small" alt="Avatar 5">
+                    </div>
+                </div>
             </div>
-        </section>
-
+            
+            <div class="profile-stats-section">
+                <div class="stat-item">
+                    <span class="stat-label">Favorites:</span>
+                    <span id="profile-favorites-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Uploads:</span>
+                    <span id="profile-uploads-count" class="stat-value">0</span>
+                </div>
+            </div>
+            
+            <div class="upload-history-section">
+                <h3>Upload History</h3>
+                <ul id="upload-history" class="upload-history-list"></ul>
+            </div>
+        </section> 
+        
         <!-- ═══════ FAVORITES SECTION ═══════ -->
         <section id="favorites-section" class="section hidden">
             <div class="favorites-container">
@@ -386,12 +440,11 @@
                     <div class="form-group" id="auth-avatar-group">
                         <label>Choose Avatar:</label>
                         <div class="avatar-options horizontal">
-                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar1" data-avatar="avatar1" class="avatar-option small active" alt="Avatar 1">
-                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar2" data-avatar="avatar2" class="avatar-option small" alt="Avatar 2">
-                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar3" data-avatar="avatar3" class="avatar-option small" alt="Avatar 3">
-                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar4" data-avatar="avatar4" class="avatar-option small" alt="Avatar 4">
-                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar5" data-avatar="avatar5" class="avatar-option small" alt="Avatar 5">
-                            <img src="https://api.dicebear.com/7.x/pixel-art/svg?seed=avatar6" data-avatar="avatar6" class="avatar-option small" alt="Avatar 6">
+                            <img src="avatar1.png" data-avatar="avatar1" class="avatar-option small active" alt="Avatar 1">
+                            <img src="avatar2.png" data-avatar="avatar2" class="avatar-option small" alt="Avatar 2">
+                            <img src="avatar3.png" data-avatar="avatar3" class="avatar-option small" alt="Avatar 3">
+                            <img src="avatar4.png" data-avatar="avatar4" class="avatar-option small" alt="Avatar 4">
+                            <img src="avatar5.png" data-avatar="avatar5" class="avatar-option small" alt="Avatar 5">
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary" id="auth-submit-button">Login</button>
@@ -419,5 +472,4 @@
     <script src="script.js"></script>
 </body>
 </html>
-
 

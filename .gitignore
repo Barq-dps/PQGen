@@ -12,3 +12,5 @@ firebase.json
 firestore.indexes.json
 firestore.rules
 storage.rules
+/backend/node_modules
+/backend/__pycache__

@@ -36,7 +36,23 @@ else:
     logger.error("❌ OpenAI API key missing or invalid; model is NOT ready! Check your .env or env var.")
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-this-in-production')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+#FRONTEND_DIST = os.path.abspath(
+   # os.path.join(os.path.dirname(__file__), "../pqgen-frontend/dist")
+#)
+#app = Flask(__name__,
+            #static_folder=FRONTEND_DIST,
+           # static_url_path="/")
+#@app.route("/", defaults={"path": ""})
+#@app.route("/<path:path>")
+#def serve_react(path):
+    # 3) If the file exists in dist/, serve it:
+   # file_path = os.path.join(FRONTEND_DIST, path)
+   # if path and os.path.exists(file_path):
+  #      return send_from_directory(FRONTEND_DIST, path)
+    # 4) Otherwise always serve index.html so React Router can take over:
+  #  return send_from_directory(FRONTEND_DIST, "index.html")
+#app.secret_key = os.getenv('SECRET_KEY', 'your-secret-key-change-this-in-production')
 CORS(app, supports_credentials=True)
 
 # Initialize Firebase

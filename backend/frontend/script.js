@@ -10,10 +10,10 @@ const firebaseConfig = {
   authDomain: "pqgen-31a0c.firebaseapp.com",
   projectId: "pqgen-31a0c",
   storageBucket: "pqgen-31a0c.firebasestorage.app",
+
   messagingSenderId: "481313515335",
   appId: "1:481313515335:web:40964b50afc8c341188e62"
 };
-
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
@@ -21,7 +21,7 @@ const db = firebase.firestore();
 const storage = firebase.storage();
 
 let currentUser = null;
-
+let initialAuthResolved = false;
 document.addEventListener("DOMContentLoaded", () => {
   // ─── Section refs ────────────────────────────────────────────────────────────
   const sections = {
@@ -35,85 +35,86 @@ document.addEventListener("DOMContentLoaded", () => {
     error: document.getElementById("error-section"),
   };
 
-  // ─── Upload UI refs ─────────────────────────────────────────────────────────
-  const fileInput = document.getElementById("file-input");
-  const uploadArea = document.getElementById("upload-area");
-  const fileNameEl = document.getElementById("file-name");
-  const fileStateEl = document.getElementById("file-state");
-  const uploadBtn = document.getElementById("upload-btn");
+ // ─── Upload UI refs ─────────────────────────────────────────────────────────
+const fileInput         = document.getElementById("file-input");
+const uploadArea        = document.getElementById("upload-area");
+const fileNameEl        = document.getElementById("file-name");
+const fileStateEl       = document.getElementById("file-state");
+const uploadBtn         = document.getElementById("upload-btn");
 
-  // ─── Extraction progress refs ───────────────────────────────────────────────
-  const progressMsg = document.getElementById("progress-message");
-  const progressFill = document.getElementById("progress-fill");
-  const progressPct = document.getElementById("progress-percentage");
+// ─── Extraction progress refs ───────────────────────────────────────────────
+const progressMsg       = document.getElementById("progress-message");
+const progressFill      = document.getElementById("progress-fill");
+const progressPct       = document.getElementById("progress-percentage");
 
-  // ─── Topic selection refs ───────────────────────────────────────────────────
-  const topicsList = document.getElementById("topics-list");
-  const selectAllBtn = document.getElementById("select-all-topics");
-  const clearAllBtn = document.getElementById("clear-topics");
-  const generateBtn = document.getElementById("generate-challenges-btn");
+// ─── Topic selection refs ───────────────────────────────────────────────────
+const topicsList        = document.getElementById("topics-list");
+const selectAllBtn      = document.getElementById("select-all-topics");
+const clearAllBtn       = document.getElementById("clear-topics");
+const generateBtn       = document.getElementById("generate-challenges-btn");
 
-  // ─── Generation progress refs ───────────────────────────────────────────────
-  const genMsg = document.getElementById("generation-message");
-  const genFill = document.getElementById("generation-progress-fill");
-  const genPct = document.getElementById("generation-progress-text");
+// ─── Generation progress refs ───────────────────────────────────────────────
+const genMsg            = document.getElementById("generation-message");
+const genFill           = document.getElementById("generation-progress-fill");
+const genPct            = document.getElementById("generation-progress-text");
 
-  // ─── Challenges display refs ─────────────────────────────────────────────────
-  const challengeContainer = document.getElementById("challenge-container");
-  const challengesCount = document.getElementById("challenges-count");
-  const challengesSolved = document.getElementById("challenges-solved");
+// ─── Challenges display refs ─────────────────────────────────────────────────
+const challengeContainer = document.getElementById("challenge-container");
+const challengesCount   = document.getElementById("challenges-count");
+const challengesSolved  = document.getElementById("challenges-solved");
 
-  // ─── Filter buttons ─────────────────────────────────────────────────────────
-  const filterBtns = Array.from(document.querySelectorAll(".filter-btn"));
+// ─── Filter buttons ─────────────────────────────────────────────────────────
+const filterBtns        = Array.from(document.querySelectorAll(".filter-btn"));
 
-  // ─── Error & retry refs ─────────────────────────────────────────────────────
-  const errorMessageEl = document.getElementById("error-message");
-  const retryBtn = document.getElementById("retry-button");
+// ─── Error & retry refs ─────────────────────────────────────────────────────
+const errorMessageEl    = document.getElementById("error-message");
+const retryBtn          = document.getElementById("retry-button");
 
-  // ─── Modal refs ─────────────────────────────────────────────────────────────
-  const challengeModal = document.getElementById("challenge-modal");
-  const modalTitle = document.getElementById("modal-title");
-  const modalBody = document.getElementById("modal-body");
-  const modalClose = document.getElementById("modal-close");
-  const modalHint = document.getElementById("modal-hint");
-  const modalSubmit = document.getElementById("modal-submit");
+// ─── Modal refs ─────────────────────────────────────────────────────────────
+const challengeModal    = document.getElementById("challenge-modal");
+const modalTitle        = document.getElementById("modal-title");
+const modalBody         = document.getElementById("modal-body");
+const modalClose        = document.getElementById("modal-close");
+const modalHint         = document.getElementById("modal-hint");
+const modalSubmit       = document.getElementById("modal-submit");
 
-  // ─── Auth Modal refs ────────────────────────────────────────────────────────
-  const authButton = document.getElementById("auth-button");
-  const authModal = document.getElementById("auth-modal");
-  const authModalClose = document.getElementById("auth-modal-close");
-  const authModalTitle = document.getElementById("auth-modal-title");
-  const authForm = document.getElementById("auth-form");
-  const authEmail = document.getElementById("auth-email");
-  const authUsernameGroup = document.getElementById("auth-username-group");
-  const authUsername = document.getElementById("auth-username");
-  const authPassword = document.getElementById("auth-password");
-  const authAvatarGroup = document.getElementById("auth-avatar-group");
-  const avatarOptions = document.querySelectorAll(".avatar-option");
-  const authSubmitButton = document.getElementById("auth-submit-button");
-  const switchToSignup = document.getElementById("switch-to-signup");
-  const switchToLogin = document.getElementById("switch-to-login");
-  let isLoginMode = true;
-  let selectedAvatar = "avatar1";
+// ─── Auth Modal refs ────────────────────────────────────────────────────────
+const authButton        = document.getElementById("auth-button");
+const authModal         = document.getElementById("auth-modal");
+const authModalClose    = document.getElementById("auth-modal-close");
+const authModalTitle    = document.getElementById("auth-modal-title");
+const authForm          = document.getElementById("auth-form");
+const authEmail         = document.getElementById("auth-email");
+const authUsernameGroup = document.getElementById("auth-username-group");
+const authUsername      = document.getElementById("auth-username");
+const authPassword      = document.getElementById("auth-password");
+const authAvatarGroup   = document.getElementById("auth-avatar-group");
+const avatarOptions     = document.querySelectorAll(".avatar-option");
+const authSubmitButton  = document.getElementById("auth-submit-button");
+const switchToSignup    = document.getElementById("switch-to-signup");
+const switchToLogin     = document.getElementById("switch-to-login");
+let isLoginMode         = true;
+let selectedAvatar      = "avatar1";
 
-  // ─── Profile refs ───────────────────────────────────────────────────────────
-  const profileDisplayName = document.getElementById("profile-display-name");
-  const profileEmail = document.getElementById("profile-email");
-  const profileAvatar = document.getElementById("profile-avatar");
-  const profileSolvedCount = document.getElementById("profile-solved-count");
-  const profileFavoritesCount = document.getElementById("profile-favorites-count");
-  const profileUploadsCount = document.getElementById("profile-uploads-count");
-  const logoutButton = document.getElementById("logout-button");
+// ─── Profile refs ───────────────────────────────────────────────────────────
+const profileDisplayName  = document.getElementById("profile-display-name");
+const profileEmail        = document.getElementById("profile-email");
+const profileAvatar       = document.getElementById("profile-avatar");
+const profileSolvedCount  = document.getElementById("profile-solved-count");
+const profileFavoritesCount = document.getElementById("profile-favorites-count");
+const profileUploadsCount = document.getElementById("profile-uploads-count");
+const logoutButton        = document.getElementById("logout-button");
 
-  // ─── Favorites refs ─────────────────────────────────────────────────────────
-  const favoritesList = document.getElementById("favorites-list");
-  const noFavorites = document.getElementById("no-favorites");
+// ─── Favorites refs ─────────────────────────────────────────────────────────
+const favoritesList      = document.getElementById("favorites-list");
+const noFavorites        = document.getElementById("no-favorites");
+const uploadHistoryEl    = document.getElementById("upload-history");
 
-  // ─── Navigation refs ────────────────────────────────────────────────────────
-  const navUpload = document.getElementById("nav-upload");
-  const navChallenges = document.getElementById("nav-challenges");
-  const navFavorites = document.getElementById("nav-favorites");
-  const navProfile = document.getElementById("nav-profile");
+// ─── Navigation refs ────────────────────────────────────────────────────────
+const navUpload          = document.getElementById("nav-upload");
+const navChallenges      = document.getElementById("nav-challenges");
+const navFavorites       = document.getElementById("nav-favorites");
+const navProfile         = document.getElementById("nav-profile");
 
   // ─── State ───────────────────────────────────────────────────────────────────
   let currentDocId = null;
@@ -330,6 +331,9 @@ document.addEventListener("DOMContentLoaded", () => {
               uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
             });
 
+          // Add to upload history
+          onUploadSuccess(file.name);
+
           updateProgress("File uploaded to Firebase, processing with backend...", 50);
 
           // Now upload to backend for processing
@@ -488,7 +492,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : "Fill in the Blank";
 
       const aiIcon = c.ai_generated
-        ? `<span class="ai-icon" title="AI-generated">🤖</span>`
+        ? `<span class="ai-icon" title="AI-generated"><i class="fas fa-star"></i></span>`
         : "";
 
       card.innerHTML = `
@@ -522,6 +526,9 @@ document.addEventListener("DOMContentLoaded", () => {
     // Update stats
     if (challengesCount) challengesCount.textContent = `${chals.length} challenges`;
     if (challengesSolved) challengesSolved.textContent = `0 solved`;
+
+    // Update profile generated count
+    updateProfileGeneratedCount();
 
     // Reset filters
     document.querySelector(".filter-btn.active")?.classList.remove("active");
@@ -917,9 +924,9 @@ document.addEventListener("DOMContentLoaded", () => {
           // Update solved count in Firestore
           if (currentUser) {
             const userRef = db.collection("users").doc(currentUser.uid);
-            userRef.update({
+            userRef.set({
               solvedChallenges: firebase.firestore.FieldValue.increment(1),
-            });
+            }, { merge: true });
           }
         } else {
           if (result.attempts >= 3) {
@@ -1077,13 +1084,168 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  avatarOptions.forEach((img) => {
-    img.addEventListener("click", () => {
-      avatarOptions.forEach((opt) => opt.classList.remove("active"));
-      img.classList.add("active");
-      selectedAvatar = img.dataset.avatar;
+  // ─── Avatar Selection Logic ────────────────────────────────────────────────
+  function setupAvatarSelection() {
+    // Setup avatar selection for auth modal
+    const authAvatarOptions = document.querySelectorAll("#auth-avatar-group .avatar-option");
+    authAvatarOptions.forEach((img) => {
+      img.addEventListener("click", () => {
+        authAvatarOptions.forEach((opt) => opt.classList.remove("active"));
+        img.classList.add("active");
+        selectedAvatar = img.dataset.avatar;
+      });
     });
-  });
+
+    // Setup avatar selection for profile page
+    const profileAvatarOptions = document.querySelectorAll("#profile-avatar-options .avatar-option");
+    profileAvatarOptions.forEach((img) => {
+      img.addEventListener("click", async () => {
+        const firebaseUser = auth.currentUser;
+        if (!firebaseUser || !currentUser) {
+          showProfileMessage("Please log in to update your profile.", "error");
+          return;
+        }
+        
+        const newAvatar = img.dataset.avatar;
+        
+        if (newAvatar === currentUser.avatar) {
+          showProfileMessage("This avatar is already selected.", "error");
+          return;
+        }
+        
+        try {
+          // Update user profile in Firebase Auth
+          await firebaseUser.updateProfile({
+            photoURL: `${newAvatar}.png`
+          });
+          
+          // Update user data in Firestore
+          await db.collection("users").doc(firebaseUser.uid).set({
+            avatar: newAvatar
+          }, { merge: true });
+          
+          // Update local user data
+          currentUser.avatar = newAvatar;
+          
+          // Update UI
+          profileAvatarOptions.forEach((opt) => opt.classList.remove("active"));
+          img.classList.add("active");
+          
+          // Update profile avatar display
+          updateProfileUI();
+          
+          showProfileMessage("Avatar updated successfully!", "success");
+          console.log("Avatar updated successfully");
+        } catch (error) {
+          console.error("Error updating avatar:", error);
+          showProfileMessage("Failed to update avatar. Please try again.", "error");
+        }
+      });
+    });
+  }
+
+  // ─── Profile Editing Functionality ──────────────────────────────────────────
+  
+  // Profile editing refs
+  const profileEditName = document.getElementById("profile-edit-name");
+  const saveDisplayNameBtn = document.getElementById("save-display-name");
+
+  // Display name editing functionality
+  if (saveDisplayNameBtn && profileEditName) {
+    saveDisplayNameBtn.addEventListener("click", async () => {
+      const firebaseUser = auth.currentUser;
+      if (!firebaseUser || !currentUser) {
+        showProfileMessage("Please log in to update your profile.", "error");
+        return;
+      }
+
+      const newDisplayName = profileEditName.value.trim();
+      if (!newDisplayName) {
+        showProfileMessage("Please enter a display name.", "error");
+        return;
+      }
+
+      if (newDisplayName === currentUser.displayName) {
+        showProfileMessage("Display name is already set to this value.", "error");
+        return;
+      }
+
+      try {
+        // Show loading state
+        saveDisplayNameBtn.classList.add("loading");
+        saveDisplayNameBtn.disabled = true;
+
+        // Update Firebase Auth profile
+        await firebaseUser.updateProfile({
+          displayName: newDisplayName
+        });
+
+        // Update Firestore user document
+        await db.collection("users").doc(firebaseUser.uid).set({
+          displayName: newDisplayName,
+        }, { merge: true });
+
+        // Update local currentUser object
+        currentUser.displayName = newDisplayName;
+
+        // Update profile display
+        if (profileDisplayName) {
+          profileDisplayName.textContent = newDisplayName;
+        }
+
+        // Clear input and show success message
+        profileEditName.value = "";
+        showProfileMessage("Display name updated successfully!", "success");
+
+        console.log("Display name updated successfully to:", newDisplayName);
+      } catch (error) {
+        console.error("Error updating display name:", error);
+        showProfileMessage("Failed to update display name. Please try again.", "error");
+      } finally {
+        // Remove loading state
+        saveDisplayNameBtn.classList.remove("loading");
+        saveDisplayNameBtn.disabled = false;
+      }
+    });
+
+    // Allow Enter key to save display name
+    profileEditName.addEventListener("keypress", (e) => {
+      if (e.key === "Enter") {
+        saveDisplayNameBtn.click();
+      }
+    });
+  }
+
+  // Function to show profile update messages
+  function showProfileMessage(message, type) {
+    // Remove any existing messages
+    const existingMessages = document.querySelectorAll(".profile-update-message");
+    existingMessages.forEach(msg => msg.remove());
+
+    // Create new message element
+    const messageEl = document.createElement("div");
+    messageEl.className = `profile-update-message ${type}`;
+    messageEl.textContent = message;
+
+    // Find the best place to insert the message
+    const profileEditingSection = document.querySelector(".profile-editing-section");
+    if (profileEditingSection) {
+      profileEditingSection.appendChild(messageEl);
+    }
+
+    // Auto-remove message after 4 seconds
+    setTimeout(() => {
+      if (messageEl.parentNode) {
+        messageEl.classList.add("fade-out");
+        setTimeout(() => {
+          messageEl.remove();
+        }, 300);
+      }
+    }, 4000);
+  }
+
+  // Call setup function after DOM is loaded
+  setupAvatarSelection();
 
   function setAuthMode(isLogin) {
     isLoginMode = isLogin;
@@ -1129,7 +1291,7 @@ document.addEventListener("DOMContentLoaded", () => {
           );
           await userCredential.user.updateProfile({
             displayName: displayName,
-            photoURL: `https://api.dicebear.com/7.x/pixel-art/svg?seed=${selectedAvatar}`,
+            photoURL: `${selectedAvatar}.png`,
           });
           // Save user data to Firestore
           await db.collection("users").doc(userCredential.user.uid).set({
@@ -1147,51 +1309,135 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-
-  // ─── Auth State Observer ────────────────────────────────────────────────────
-  auth.onAuthStateChanged(async (user) => {
-    currentUser = user;
-    if (user) {
-      // User is signed in.
-      authButton.textContent = "Profile";
-      authButton.removeEventListener("click", () => {
-        authModal.classList.remove("hidden");
-        authModal.classList.add("show");
-        setAuthMode(true);
-      });
-      authButton.addEventListener("click", () => {
-        showSection("profile");
-        updateProfileUI();
-      });
-      // Fetch user data from Firestore
+auth.onAuthStateChanged(async (user) => {
+  console.log("Auth state changed:", user ? "User signed in" : "User signed out");
+  
+  if (user) {
+    // User is authenticated - fetch and merge Firestore data
+    try {
+      console.log("Fetching user data from Firestore for UID:", user.uid);
+      
+      // Fetch user document from Firestore
       const userDoc = await db.collection("users").doc(user.uid).get();
+      
       if (userDoc.exists) {
         const userData = userDoc.data();
-        currentUser = { ...user, ...userData }; // Merge Firestore data
+        console.log("User data fetched from Firestore:", userData);
+        
+        // Merge Firebase Auth user with Firestore data
+        currentUser = {
+          ...user,
+          ...userData,
+          // Ensure we keep the Firebase Auth properties
+          uid: user.uid,
+          email: user.email,
+          emailVerified: user.emailVerified,
+          // Override with Firestore data if available
+          displayName: userData.displayName || user.displayName,
+          photoURL: userData.avatar ? `${userData.avatar}.png` : user.photoURL,
+          avatar: userData.avatar || 'avatar1'
+        };
+        
+        console.log("Merged currentUser object:", currentUser);
+      } else {
+        console.log("No Firestore document found for user, using Auth data only");
+        // User exists in Auth but not in Firestore (shouldn't happen with proper signup)
+        currentUser = {
+          ...user,
+          avatar: 'avatar1',
+          solvedChallenges: 0
+        };
+        
+        // Create user document in Firestore for consistency
+        await db.collection("users").doc(user.uid).set({
+          email: user.email,
+          displayName: user.displayName || "User",
+          avatar: 'avatar1',
+          solvedChallenges: 0,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        
+        console.log("Created missing user document in Firestore");
       }
-      updateProfileUI();
+      
+      // Update UI for authenticated user
+      authModal.classList.add("hidden");
+      authModal.classList.remove("show");
+      
+      // Update auth button to show Profile
+      authButton.textContent = "Profile";
+      authButton.onclick = () => {
+        showSection("profile");
+        updateProfileUI();
+      };
+      
+      // Update profile UI with fetched data
+      await updateProfileUI();
+      
+      // Load favorites and upload history data
+      await loadFavoritesList();
+      await loadUploadHistory();
       
       // Show upload section by default when logged in
       showSection("upload");
-    } else {
-      // User is signed out - require login
-      authButton.textContent = "Login / Signup";
-      authButton.removeEventListener("click", () => {
+      
+      console.log("User authentication and UI update completed");
+      
+    } catch (error) {
+      console.error("Error fetching user data from Firestore:", error);
+      
+      // Fallback to Auth data only if Firestore fetch fails
+      currentUser = {
+        ...user,
+        avatar: 'avatar1',
+        solvedChallenges: 0
+      };
+      
+      // Still update UI even if Firestore fails
+      authModal.classList.add("hidden");
+      authButton.textContent = "Profile";
+      authButton.onclick = () => {
         showSection("profile");
         updateProfileUI();
-      });
-      authButton.addEventListener("click", () => {
-        authModal.classList.remove("hidden");
-        authModal.classList.add("show");
-        setAuthMode(true);
-      });
+      };
       
-      // Force login modal to show if not authenticated
+      showSection("upload");
+      
+      // Show error to user
+      alert("Warning: Could not load profile data. Some features may not work correctly.");
+    }
+    
+  } else {
+    // User is not authenticated - show login modal
+    console.log("User not authenticated, showing login modal");
+    
+    currentUser = null;
+    
+    // Update auth button to show Login/Signup
+    authButton.textContent = "Login / Signup";
+    authButton.onclick = () => {
       authModal.classList.remove("hidden");
       authModal.classList.add("show");
       setAuthMode(true);
-    }
-  });
+    };
+    
+    // Automatically open login modal when not authenticated
+    authModal.classList.remove("hidden");
+    authModal.classList.add("show");
+    setAuthMode(true);
+    
+    // Show upload section (which will prompt for login when needed)
+    showSection("upload");
+    
+    console.log("Login modal displayed for unauthenticated user");
+  }
+  
+  // Mark initial auth resolution as complete
+  if (!initialAuthResolved) {
+    initialAuthResolved = true;
+    console.log("Initial auth state resolved");
+  }
+});
 
   // ─── Navigation Event Listeners ─────────────────────────────────────────────
   if (navUpload) {
@@ -1219,40 +1465,77 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (navFavorites) {
-    navFavorites.addEventListener("click", () => {
+    navFavorites.addEventListener("click", async () => {
       if (!currentUser) {
         alert("Please login to access this feature.");
         return;
       }
       showSection("favorites");
-      loadFavorites();
+      await loadFavoritesList();
     });
   }
 
   if (navProfile) {
-    navProfile.addEventListener("click", () => {
+    navProfile.addEventListener("click", async () => {
       if (!currentUser) {
         alert("Please login to access this feature.");
         return;
       }
       showSection("profile");
-      updateProfileUI();
+      await updateProfileUI();
+      await loadUploadHistory();
     });
   }
 
-  // ─── Profile Page Logic ─────────────────────────────────────────────────────
-  async function updateProfileUI() {
-    if (!currentUser) return;
+async function updateProfileUI() {
+  if (!currentUser) {
+    console.log("No currentUser available for profile update");
+    return;
+  }
 
+  console.log("Updating profile UI with currentUser data:", currentUser);
+
+  // Update basic profile information
+  if (profileDisplayName) {
     profileDisplayName.textContent = currentUser.displayName || "N/A";
+  }
+  
+  if (profileEmail) {
     profileEmail.textContent = currentUser.email || "N/A";
-    profileAvatar.src = currentUser.photoURL || `https://api.dicebear.com/7.x/pixel-art/svg?seed=${currentUser.avatar || 'avatar1'}`;
+  }
+  
+  // Update profile avatar with new system
+  const userAvatar = currentUser.avatar || 'avatar1';
+  if (profileAvatar) {
+    profileAvatar.src = `${userAvatar}.png`;
+  }
 
-    // Fetch solved challenges count
+  // Update profile editing fields
+  const profileEditName = document.getElementById("profile-edit-name");
+  if (profileEditName) {
+    profileEditName.placeholder = `Current: ${currentUser.displayName || "User"}`;
+  }
+
+  // Highlight selected avatar in profile page
+  const profileAvatarOptions = document.querySelectorAll("#profile-avatar-options .avatar-option");
+  profileAvatarOptions.forEach((opt) => opt.classList.remove("active"));
+  const selectedOption = document.querySelector(`#profile-avatar-options .avatar-option[data-avatar="${userAvatar}"]`);
+  if (selectedOption) {
+    selectedOption.classList.add("active");
+  }
+
+  try {
+    // Fetch fresh data from Firestore for accurate counts
     const userDoc = await db.collection("users").doc(currentUser.uid).get();
     if (userDoc.exists) {
       const userData = userDoc.data();
-      profileSolvedCount.textContent = userData.solvedChallenges || 0;
+      
+      // Update solved challenges count
+      if (profileSolvedCount) {
+        profileSolvedCount.textContent = userData.solvedChallenges || 0;
+      }
+      
+      console.log("Updated solved challenges count:", userData.solvedChallenges || 0);
     }
 
     // Fetch favorite challenges count
@@ -1261,7 +1544,12 @@ document.addEventListener("DOMContentLoaded", () => {
       .doc(currentUser.uid)
       .collection("favorites")
       .get();
-    profileFavoritesCount.textContent = favoritesSnapshot.size;
+    
+    if (profileFavoritesCount) {
+      profileFavoritesCount.textContent = favoritesSnapshot.size;
+    }
+    
+    console.log("Updated favorites count:", favoritesSnapshot.size);
 
     // Fetch uploaded documents count
     const uploadsSnapshot = await db
@@ -1269,7 +1557,36 @@ document.addEventListener("DOMContentLoaded", () => {
       .doc(currentUser.uid)
       .collection("uploads")
       .get();
-    profileUploadsCount.textContent = uploadsSnapshot.size;
+    
+    if (profileUploadsCount) {
+      profileUploadsCount.textContent = uploadsSnapshot.size;
+    }
+    
+    console.log("Updated uploads count:", uploadsSnapshot.size);
+    
+  } catch (error) {
+    console.error("Error fetching profile statistics:", error);
+    
+    // Set default values if fetch fails
+    if (profileSolvedCount) profileSolvedCount.textContent = "0";
+    if (profileFavoritesCount) profileFavoritesCount.textContent = "0";
+    if (profileUploadsCount) profileUploadsCount.textContent = "0";
+  }
+  
+  console.log("Profile UI update completed");
+}
+
+  // ─── Logout Functionality ──────────────────────────────────────────────────
+  if (logoutButton) {
+    logoutButton.addEventListener("click", async () => {
+      try {
+        await auth.signOut();
+        console.log("User signed out successfully");
+      } catch (error) {
+        console.error("Error signing out:", error);
+        alert("Failed to sign out. Please try again.");
+      }
+    });
   }
 
   // ─── Favorites Page Logic ───────────────────────────────────────────────────
@@ -1415,6 +1732,353 @@ document.addEventListener("DOMContentLoaded", () => {
         alert(`Logout failed: ${error.message}`);
       }
     });
+  }
+
+  // ─── Profile Bar Functions ──────────────────────────────────────────────────
+  // Function to update profile generated count from challenges count
+  function updateProfileGeneratedCount() {
+    const challengesCountEl = document.getElementById('challenges-count');
+    const profileGeneratedCountEl = document.getElementById('profile-generated-count');
+    
+    if (challengesCountEl && profileGeneratedCountEl) {
+      const challengesText = challengesCountEl.textContent;
+      const challengesNumber = challengesText.split(' ')[0];
+      profileGeneratedCountEl.textContent = challengesNumber;
+    }
+  }
+
+  // Function to handle successful file upload and add to upload history
+  function onUploadSuccess(filename) {
+    const ul = document.getElementById('upload-log-list');
+    if (ul) {
+      const date = new Date().toLocaleDateString();
+      ul.insertAdjacentHTML('beforeend',
+        `<li>${date}: ${filename}</li>`);
+    }
+  }
+
+  // ─── Firestore Data Loader Functions ────────────────────────────────────────
+  async function loadFavoritesList() {
+    console.log("loadFavoritesList called");
+    console.log("favoritesList element:", favoritesList);
+    console.log("noFavorites element:", noFavorites);
+    console.log("currentUser:", currentUser);
+    
+    if (!favoritesList || !noFavorites || !currentUser) {
+      console.log("Early return from loadFavoritesList - missing elements or user");
+      return;
+    }
+    
+    favoritesList.innerHTML = "";
+    noFavorites.classList.add("hidden");
+    
+    try {
+      console.log("Querying Firestore for favorites...");
+      let snap;
+      try {
+        // Try with orderBy first
+        snap = await db.collection("users").doc(currentUser.uid)
+                       .collection("favorites")
+                       .orderBy("favoritedAt","desc").get();
+      } catch (orderError) {
+        console.log("OrderBy query failed, trying without orderBy:", orderError);
+        // Fallback to query without orderBy
+        snap = await db.collection("users").doc(currentUser.uid)
+                       .collection("favorites")
+                       .get();
+      }
+      
+      console.log("Firestore query completed. Empty:", snap.empty, "Size:", snap.size);
+      
+      if (snap.empty) { 
+        console.log("No favorites found, showing empty state");
+        noFavorites.classList.remove("hidden"); 
+        return; 
+      }
+      
+      console.log("Processing", snap.size, "favorite documents");
+      
+      // Process each favorite and fetch challenge data
+      for (const doc of snap.docs) {
+        const data = doc.data();
+        console.log("Favorite document data:", data);
+        
+        const { challengeId, favoritedAt } = data;
+        
+        if (!challengeId) {
+          console.log("No challengeId found, skipping");
+          continue;
+        }
+        
+        // Handle date formatting first (outside try block to avoid scope issues)
+        let dateString = "Unknown date";
+        try {
+          if (favoritedAt && favoritedAt.toDate) {
+            dateString = new Date(favoritedAt.toDate()).toLocaleDateString();
+          } else if (favoritedAt) {
+            dateString = new Date(favoritedAt).toLocaleDateString();
+          }
+        } catch (dateError) {
+          console.log("Date formatting error:", dateError);
+          dateString = "Invalid date";
+        }
+        
+        try {
+          // Look for challenge data in allChallenges array (no Firestore query needed)
+          let challengeData = null;
+          if (window.allChallenges && Array.isArray(window.allChallenges)) {
+            challengeData = window.allChallenges.find(c => c.id === challengeId);
+            console.log("Found challenge in allChallenges:", challengeData);
+          }
+          
+          // Extract question text from challenge data
+          let questionText = "Challenge not available";
+          if (challengeData) {
+            questionText = challengeData.question || 
+                          challengeData.challengeText || 
+                          challengeData.title || 
+                          challengeData.description || 
+                          challengeData.prompt || 
+                          challengeData.text || 
+                          challengeData.content ||
+                          "Challenge data incomplete";
+          } else {
+            // If challenge not found in allChallenges, show the challengeId
+            questionText = `Challenge: ${challengeId}`;
+            console.log("Challenge not found in allChallenges, using challengeId");
+          }
+          
+          console.log("Extracted question text:", questionText);
+          
+          // Create full challenge card (like in renderChallenges)
+          if (challengeData) {
+            const card = document.createElement("div");
+            card.className = "challenge-item favorite-challenge-card";
+            card.dataset.type = challengeData.type || "unknown";
+            card.dataset.challengeId = challengeId;
+            
+            const typeColors = {
+              "multiple-choice": "#007bff",
+              multiple_choice: "#007bff",
+              debugging: "#ff8c00",
+              "fill-in-the-blank": "#8a2be2",
+              fill_in_blank: "#8a2be2",
+            };
+            
+            const borderColor = typeColors[challengeData.type] || "#00ff41";
+            card.style.setProperty("--border-color", borderColor);
+            
+            const typeLabel = challengeData.type && challengeData.type.includes("multiple")
+              ? "Multiple Choice"
+              : challengeData.type === "debugging"
+              ? "Debugging"
+              : challengeData.type === "fill_in_blank" || challengeData.type === "fill-in-the-blank"
+              ? "Fill in the Blank"
+              : "Challenge";
+            
+            const aiIcon = challengeData.ai_generated
+              ? `<span class="ai-icon" title="AI-generated"><i class="fas fa-star"></i></span>`
+              : "";
+            
+            // Build options HTML for multiple choice
+            let optionsHTML = "";
+            if (challengeData.type && challengeData.type.includes("multiple") && challengeData.options) {
+              optionsHTML = `
+                <div class="challenge-options">
+                  ${challengeData.options.map((option, idx) => `
+                    <label class="option-label">
+                      <input type="radio" name="answer-${challengeId}" value="${option}" />
+                      <span class="option-text">${option}</span>
+                    </label>
+                  `).join('')}
+                </div>`;
+            }
+            
+            card.innerHTML = `
+              <div class="challenge-header">
+                <span class="challenge-type">${typeLabel}</span>
+                <h3>${challengeData.topic || 'Programming Challenge'}</h3>
+                <span class="challenge-difficulty ${challengeData.difficulty || 'medium'}">
+                  ${challengeData.difficulty ? challengeData.difficulty.charAt(0).toUpperCase() + challengeData.difficulty.slice(1) : 'Medium'}
+                </span>
+                ${aiIcon}
+                <div class="favorite-date-badge">Favorited: ${dateString}</div>
+              </div>
+              <div class="challenge-question">
+                <p>${questionText}</p>
+                ${optionsHTML}
+              </div>
+              <div class="challenge-actions">
+                <button class="btn btn-secondary hint-btn" data-challenge-id="${challengeId}">
+                  <i class="fas fa-lightbulb"></i> Show Hint
+                </button>
+                <button class="btn btn-primary solve-btn" data-challenge-id="${challengeId}">
+                  <i class="fas fa-play"></i> Solve Challenge
+                </button>
+                <button class="btn btn-warning unfavorite-btn favorited" data-challenge-id="${challengeId}" title="Remove from favorites">
+                  <i class="fas fa-star"></i> Remove
+                </button>
+              </div>
+            `;
+            
+            // Add event listeners for the buttons
+            const hintBtn = card.querySelector('.hint-btn');
+            const solveBtn = card.querySelector('.solve-btn');
+            const unfavoriteBtn = card.querySelector('.unfavorite-btn');
+            
+            // Hint button functionality
+            hintBtn.addEventListener('click', () => {
+              if (challengeData.hint) {
+                alert(`Hint: ${challengeData.hint}`);
+              } else {
+                alert("No hint available for this challenge.");
+              }
+            });
+            
+            // Solve button functionality
+            solveBtn.addEventListener('click', () => {
+              console.log("Solve button clicked for challenge:", challengeId);
+              // Open challenge modal or navigate to solve view
+              if (typeof openChallengeModal === 'function') {
+                // Find the challenge index in allChallenges for modal
+                const challengeIndex = window.allChallenges ? window.allChallenges.findIndex(c => c.id === challengeId) : -1;
+                if (challengeIndex !== -1) {
+                  const state = challengeStates[challengeIndex] || { attempts: 0, solved: false };
+                  openChallengeModal(challengeIndex, challengeData, state);
+                } else {
+                  alert("Challenge modal not available. Please regenerate challenges.");
+                }
+              } else {
+                alert("Challenge solving interface not available. Please upload a document first.");
+              }
+            });
+            
+            // Unfavorite button functionality
+            unfavoriteBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              await toggleFavorite(challengeId, unfavoriteBtn);
+              // Remove the card from favorites list after unfavoriting
+              card.remove();
+              
+              // Check if no favorites left
+              if (favoritesList.children.length === 0) {
+                noFavorites.classList.remove("hidden");
+              }
+            });
+            
+            favoritesList.appendChild(card);
+            console.log("Added full challenge card to DOM for:", challengeId);
+            
+          } else {
+            // Fallback: create simple card if no challenge data
+            const card = document.createElement("div");
+            card.className = "favorite-item";
+            card.innerHTML = `
+              <div class="favorite-content">
+                <div class="challenge-preview">Challenge: ${challengeId}</div>
+                <div class="favorite-meta">
+                  <span class="favorite-date">${dateString}</span>
+                  <button class="favorite-star-btn favorited" data-challenge-id="${challengeId}" title="Remove from favorites">
+                    <i class="fas fa-star"></i>
+                  </button>
+                </div>
+              </div>`;
+            
+            // Add star button click handler for fallback case
+            const starBtn = card.querySelector('.favorite-star-btn');
+            starBtn.addEventListener('click', async (e) => {
+              e.stopPropagation();
+              await toggleFavorite(challengeId, starBtn);
+              card.remove();
+              if (favoritesList.children.length === 0) {
+                noFavorites.classList.remove("hidden");
+              }
+            });
+            
+            favoritesList.appendChild(card);
+          }
+          
+        } catch (challengeError) {
+          console.error("Error processing challenge for", challengeId, ":", challengeError);
+          
+          // Still create a card but with limited info
+          const card = document.createElement("div");
+          card.className = "favorite-item";
+          card.innerHTML = `
+            <div class="favorite-content">
+              <div class="challenge-preview">Challenge: ${challengeId}</div>
+              <div class="favorite-meta">
+                <span class="favorite-date">${dateString}</span>
+                <button class="favorite-star-btn favorited" data-challenge-id="${challengeId}" title="Remove from favorites">
+                  <i class="fas fa-star"></i>
+                </button>
+              </div>
+            </div>`;
+          
+          // Add star button click handler for error case too
+          const starBtn = card.querySelector('.favorite-star-btn');
+          starBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await toggleFavorite(challengeId, starBtn);
+            card.remove();
+            if (favoritesList.children.length === 0) {
+              noFavorites.classList.remove("hidden");
+            }
+          });
+          
+          favoritesList.appendChild(card);
+        }
+      }
+      
+      console.log("Finished processing all favorites");
+    } catch (error) {
+      console.error("Error loading favorites:", error);
+      noFavorites.classList.remove("hidden");
+    }
+  }
+
+  // Function to load a specific challenge for solving again
+  function loadSpecificChallenge(challengeData) {
+    console.log("Loading specific challenge:", challengeData);
+    // This would integrate with your existing challenge display system
+    // You might need to adapt this based on how challenges are currently rendered
+    if (typeof renderChallenges === 'function') {
+      renderChallenges([challengeData]);
+    }
+  }
+
+  // Make function globally accessible for debugging
+  window.loadFavoritesList = loadFavoritesList;
+
+  async function loadUploadHistory() {
+    if (!uploadHistoryEl || !currentUser) return;
+    
+    uploadHistoryEl.innerHTML = "";
+    
+    try {
+      const snap = await db.collection("users").doc(currentUser.uid)
+                         .collection("uploads")
+                         .orderBy("uploadedAt","desc").get();
+      
+      if (snap.empty) {
+        uploadHistoryEl.innerHTML = `<li class="empty-state">No uploads yet</li>`;
+        return;
+      }
+      
+      snap.forEach(doc => {
+        const { filename, downloadURL, uploadedAt } = doc.data();
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <a href="${downloadURL}" target="_blank">${filename}</a>
+          <span class="upload-date">
+            ${new Date(uploadedAt.toDate()).toLocaleString()}
+          </span>`;
+        uploadHistoryEl.appendChild(li);
+      });
+    } catch (error) {
+      console.error("Error loading upload history:", error);
+      uploadHistoryEl.innerHTML = `<li class="empty-state">Error loading uploads</li>`;
+    }
   }
 
   // ─── Retry & Theme ─────────────────────────────────────────────────────────
