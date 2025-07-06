@@ -120,7 +120,26 @@ const navProfile         = document.getElementById("nav-profile");
   let currentDocId = null;
   let allTopics = [];
   let allChallenges = [];
+  // Make allChallenges globally accessible for favorites
+  window.allChallenges = allChallenges;
   let currentChallengeIndex = null;
+
+  // ─── Restore Challenges from localStorage ───────────────────────────────────
+  function restoreChallengesFromStorage() {
+    try {
+      const storedChallenges = localStorage.getItem('pqgen-challenges');
+      if (storedChallenges) {
+        const challenges = JSON.parse(storedChallenges);
+        allChallenges = challenges;
+        window.allChallenges = challenges;
+        console.log('Challenges restored from localStorage:', challenges.length);
+        return challenges;
+      }
+    } catch (e) {
+      console.warn('Failed to restore challenges from localStorage:', e);
+    }
+    return [];
+  }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
   function showSection(key) {
@@ -447,6 +466,16 @@ const navProfile         = document.getElementById("nav-profile");
           const finalRes = await fetch(`/api/documents/${currentDocId}/challenges`);
           const { challenges } = await finalRes.json();
           allChallenges = challenges;
+          window.allChallenges = challenges; // Update global reference
+          
+          // Store challenges in localStorage for persistence
+          try {
+            localStorage.setItem('pqgen-challenges', JSON.stringify(challenges));
+            console.log('Challenges saved to localStorage:', challenges.length);
+          } catch (e) {
+            console.warn('Failed to save challenges to localStorage:', e);
+          }
+          
           renderChallenges(challenges);
           break;
         }
@@ -503,6 +532,9 @@ const navProfile         = document.getElementById("nav-profile");
             ${c.difficulty.charAt(0).toUpperCase() + c.difficulty.slice(1)}
           </span>
           ${aiIcon}
+          <button class="favorite-star-btn" data-challenge-id="${c.id}" title="Add to favorites">
+            ⭐
+          </button>
         </div>
         <div class="challenge-actions">
           <button class="btn btn-secondary hint-btn" data-index="${i}">
@@ -510,9 +542,6 @@ const navProfile         = document.getElementById("nav-profile");
           </button>
           <button class="btn btn-primary solve-btn" data-index="${i}">
             <i class="fas fa-play"></i> Solve Challenge
-          </button>
-          <button class="btn btn-secondary favorite-icon" data-challenge-id="${c.id}">
-            <i class="fas fa-star"></i>
           </button>
         </div>
       `;
@@ -560,7 +589,7 @@ const navProfile         = document.getElementById("nav-profile");
       const challenge = allChallenges[index];
       const state = challengeStates[index];
       openChallengeModal(index, challenge, state);
-    } else if (button.classList.contains("favorite-icon")) {
+    } else if (button.classList.contains("favorite-star-btn")) {
       if (!currentUser) {
         alert("Please login to favorite challenges.");
         return;
@@ -578,23 +607,96 @@ const navProfile         = document.getElementById("nav-profile");
     const favoriteDocRef = favoritesRef.doc(challengeId);
 
     try {
+      // Add loading animation
+      button.style.transform = "scale(1.2)";
+      button.style.transition = "all 0.3s ease";
+      
       const doc = await favoriteDocRef.get();
       if (doc.exists) {
         await favoriteDocRef.delete();
         button.classList.remove("favorited");
+        button.textContent = "⭐"; // Empty star
+        button.title = "Add to favorites";
+        
+        // Unfavorite animation
+        button.style.transform = "scale(0.8)";
+        setTimeout(() => {
+          button.style.transform = "scale(1)";
+        }, 200);
+        
         console.log("Challenge unfavorited");
       } else {
-        await favoriteDocRef.set({
+        // Find the full challenge data
+        let challengeData = null;
+        console.log("Looking for challenge data for ID:", challengeId);
+        console.log("window.allChallenges:", window.allChallenges);
+        
+        if (window.allChallenges && Array.isArray(window.allChallenges)) {
+          challengeData = window.allChallenges.find(c => c.id === challengeId);
+          console.log("Found in allChallenges:", challengeData);
+        }
+        
+        if (!challengeData) {
+          // Try to restore from localStorage
+          console.log("Challenge not found in allChallenges, trying localStorage");
+          const restoredChallenges = restoreChallengesFromStorage();
+          console.log("Restored challenges:", restoredChallenges);
+          if (restoredChallenges.length > 0) {
+            challengeData = restoredChallenges.find(c => c.id === challengeId);
+            console.log("Found in localStorage:", challengeData);
+          }
+        }
+        
+        // Store the complete challenge data in Firestore
+        const favoriteData = {
           challengeId: challengeId,
           favoritedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        });
+        };
+        
+        // Include full challenge data if available
+        if (challengeData) {
+          favoriteData.challengeData = {
+            id: challengeData.id,
+            question: challengeData.question,
+            type: challengeData.type,
+            topic: challengeData.topic,
+            difficulty: challengeData.difficulty,
+            options: challengeData.options || null,
+            hint: challengeData.hint || null,
+            ai_generated: challengeData.ai_generated || false,
+            answer: challengeData.answer || null
+          };
+          console.log("✅ Storing full challenge data:", favoriteData.challengeData);
+        } else {
+          console.error("❌ Challenge data not found for ID:", challengeId);
+          console.log("Available challenge IDs:", window.allChallenges ? window.allChallenges.map(c => c.id) : "No challenges");
+          // Still save the favorite but without full data
+        }
+        
+        console.log("Final favoriteData to save:", favoriteData);
+        
+        await favoriteDocRef.set(favoriteData);
         button.classList.add("favorited");
-        console.log("Challenge favorited");
+        button.textContent = "🌟"; // Filled star
+        button.title = "Remove from favorites";
+        
+        // Favorite animation with sparkle effect
+        button.style.transform = "scale(1.5)";
+        button.style.filter = "drop-shadow(0 0 10px gold)";
+        setTimeout(() => {
+          button.style.transform = "scale(1)";
+          button.style.filter = "none";
+        }, 300);
+        
+        console.log("Challenge favorited with full data");
       }
       updateProfileUI(); // Update favorite count on profile
     } catch (error) {
       console.error("Error toggling favorite:", error);
       alert("Failed to update favorite status.");
+      // Reset button state on error
+      button.style.transform = "scale(1)";
+      button.style.filter = "none";
     }
   }
 
@@ -1769,6 +1871,17 @@ async function updateProfileUI() {
       return;
     }
     
+    // Restore challenges from localStorage if not available
+    if (!window.allChallenges || window.allChallenges.length === 0) {
+      console.log("allChallenges is empty, attempting to restore from localStorage");
+      const restoredChallenges = restoreChallengesFromStorage();
+      if (restoredChallenges.length > 0) {
+        console.log("Successfully restored challenges from localStorage:", restoredChallenges.length);
+      } else {
+        console.log("No challenges found in localStorage");
+      }
+    }
+    
     favoritesList.innerHTML = "";
     noFavorites.classList.add("hidden");
     
@@ -1824,12 +1937,25 @@ async function updateProfileUI() {
         }
         
         try {
-          // Look for challenge data in allChallenges array (no Firestore query needed)
-          let challengeData = null;
-          if (window.allChallenges && Array.isArray(window.allChallenges)) {
+          // First try to get challenge data from Firestore (stored when favorited)
+          let challengeData = data.challengeData || null;
+          
+          // If no stored data, try to find in allChallenges array as fallback
+          if (!challengeData && window.allChallenges && Array.isArray(window.allChallenges)) {
             challengeData = window.allChallenges.find(c => c.id === challengeId);
-            console.log("Found challenge in allChallenges:", challengeData);
+            console.log("Found challenge in allChallenges as fallback:", challengeData);
           }
+          
+          // If still no data, try localStorage as last resort
+          if (!challengeData) {
+            const restoredChallenges = restoreChallengesFromStorage();
+            if (restoredChallenges.length > 0) {
+              challengeData = restoredChallenges.find(c => c.id === challengeId);
+              console.log("Found challenge in localStorage as fallback:", challengeData);
+            }
+          }
+          
+          console.log("Final challenge data for", challengeId, ":", challengeData);
           
           // Extract question text from challenge data
           let questionText = "Challenge not available";
@@ -1843,9 +1969,9 @@ async function updateProfileUI() {
                           challengeData.content ||
                           "Challenge data incomplete";
           } else {
-            // If challenge not found in allChallenges, show the challengeId
+            // If challenge not found anywhere, show the challengeId
             questionText = `Challenge: ${challengeId}`;
-            console.log("Challenge not found in allChallenges, using challengeId");
+            console.log("Challenge not found anywhere, using challengeId");
           }
           
           console.log("Extracted question text:", questionText);

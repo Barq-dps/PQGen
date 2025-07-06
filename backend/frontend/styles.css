@@ -2899,3 +2899,217 @@ textarea.debug-input:focus {
   }
 }
 
+
+/* ─── Star Favorite Button Styles ─────────────────────────────────────────── */
+.favorite-star-btn {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.favorite-star-btn:hover {
+  transform: scale(1.2);
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6));
+  background: rgba(255, 215, 0, 0.1);
+}
+
+.favorite-star-btn:active {
+  transform: scale(0.9);
+}
+
+.favorite-star-btn.favorited {
+  animation: starPulse 2s infinite;
+}
+
+@keyframes starPulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 5px gold);
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 15px gold);
+  }
+}
+
+/* Enhanced Challenge Header for Star Button */
+.challenge-header {
+  position: relative;
+  padding-right: 3rem; /* Make space for star button */
+}
+
+/* Favorite Challenge Cards in Favorites Tab */
+.favorite-challenge-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-xl);
+  margin-bottom: var(--spacing-lg);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.favorite-challenge-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 255, 65, 0.2);
+  border-color: var(--accent-primary);
+}
+
+.favorite-date-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  z-index: 5;
+}
+
+.favorite-challenge-card .challenge-header {
+  padding-right: 8rem; /* More space for date badge */
+}
+
+.favorite-challenge-card .challenge-question {
+  margin: var(--spacing-lg) 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.favorite-challenge-card .challenge-options {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-md);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+}
+
+.favorite-challenge-card .option-label {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.favorite-challenge-card .option-label:hover {
+  background: rgba(0, 255, 65, 0.05);
+}
+
+.favorite-challenge-card .option-label input[type="radio"] {
+  accent-color: var(--accent-primary);
+}
+
+.favorite-challenge-card .challenge-actions {
+  display: flex;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-lg);
+  flex-wrap: wrap;
+}
+
+.favorite-challenge-card .btn {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* Responsive Design for Star Buttons */
+@media (max-width: 768px) {
+  .favorite-star-btn {
+    font-size: 1.2rem;
+    width: 35px;
+    height: 35px;
+    top: 0.75rem;
+    right: 0.75rem;
+  }
+  
+  .challenge-header {
+    padding-right: 2.5rem;
+  }
+  
+  .favorite-challenge-card .challenge-header {
+    padding-right: 7rem;
+  }
+  
+  .favorite-date-badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    top: 0.75rem;
+    right: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .favorite-star-btn {
+    font-size: 1rem;
+    width: 30px;
+    height: 30px;
+  }
+  
+  .favorite-challenge-card .challenge-actions {
+    flex-direction: column;
+  }
+  
+  .favorite-challenge-card .btn {
+    width: 100%;
+    min-width: unset;
+  }
+}
+
+/* Star Animation Effects */
+@keyframes starFavorite {
+  0% {
+    transform: scale(1);
+    filter: none;
+  }
+  50% {
+    transform: scale(1.5);
+    filter: drop-shadow(0 0 15px gold) hue-rotate(45deg);
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 5px gold);
+  }
+}
+
+@keyframes starUnfavorite {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 5px gold);
+  }
+  50% {
+    transform: scale(0.8);
+    filter: none;
+  }
+  100% {
+    transform: scale(1);
+    filter: none;
+  }
+}
+
+.favorite-star-btn.animating-favorite {
+  animation: starFavorite 0.6s ease-out;
+}
+
+.favorite-star-btn.animating-unfavorite {
+  animation: starUnfavorite 0.4s ease-out;
+}
+
