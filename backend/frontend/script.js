@@ -1419,54 +1419,38 @@ auth.onAuthStateChanged(async (user) => {
     try {
       console.log("Fetching user data from Firestore for UID:", user.uid);
       
-      // Fetch user document from Firestore
-      const userDoc = await db.collection("users").doc(user.uid).get();
-      
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        console.log("User data fetched from Firestore:", userData);
-        
-        // Merge Firebase Auth user with Firestore data
-        currentUser = {
-          ...user,
-          ...userData,
-          // Ensure we keep the Firebase Auth properties
-          uid: user.uid,
-          email: user.email,
-          emailVerified: user.emailVerified,
-          // Override with Firestore data if available
-          displayName: userData.displayName || user.displayName,
-          photoURL: userData.avatar ? `${userData.avatar}.png` : user.photoURL,
-          avatar: userData.avatar || 'avatar1'
-        };
-        
-        console.log("Merged currentUser object:", currentUser);
-      } else {
-        console.log("No Firestore document found for user, using Auth data only");
-        // User exists in Auth but not in Firestore (shouldn't happen with proper signup)
-        currentUser = {
-          ...user,
-          avatar: 'avatar1',
-          solvedChallenges: 0
-        };
-        
-        // Create user document in Firestore for consistency
-        await db.collection("users").doc(user.uid).set({
-          email: user.email,
-          displayName: user.displayName || "User",
-          avatar: 'avatar1',
-          solvedChallenges: 0,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      const userRef = db.collection("users").doc(user.uid);
+      const userDoc = await userRef.get();
+
+      // If no Firestore doc yet, create one
+      if (!userDoc.exists) {
+        await userRef.set({
+          displayName:       user.displayName,
+          email:             user.email,
+          avatar:            "avatar1",
+          solvedChallenges:  0,
+          createdAt:         firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
-        
         console.log("Created missing user document in Firestore");
       }
-      
+
+      // Merge Auth + Firestore data into currentUser
+      const freshData = (await userRef.get()).data();
+      currentUser = {
+        uid:               user.uid,
+        email:             user.email,
+        emailVerified:     user.emailVerified,
+        displayName:       freshData.displayName,
+        avatar:            freshData.avatar,
+        solvedChallenges:  freshData.solvedChallenges,
+        createdAt:         freshData.createdAt
+      };
+      console.log("Merged currentUser object:", currentUser);
+
       // Update UI for authenticated user
       authModal.classList.add("hidden");
       authModal.classList.remove("show");
       
-      // Update auth button to show Logout
       authButton.textContent = "Logout";
       authButton.setAttribute("data-state", "logout");
       authButton.onclick = async () => {
@@ -1482,29 +1466,26 @@ auth.onAuthStateChanged(async (user) => {
         }
       };
       
-      // Update profile UI with fetched data
+      // Refresh UI and data
       await updateProfileUI();
-      
-      // Load favorites and upload history data
       await loadFavoritesList();
       await loadUploadHistory();
-      
-      // Show upload section by default when logged in
       showSection("upload");
-      
       console.log("User authentication and UI update completed");
       
     } catch (error) {
       console.error("Error fetching user data from Firestore:", error);
       
-      // Fallback to Auth data only if Firestore fetch fails
+      // Fallback to Auth data only
       currentUser = {
-        ...user,
-        avatar: 'avatar1',
-        solvedChallenges: 0
+        uid:               user.uid,
+        email:             user.email,
+        emailVerified:     user.emailVerified,
+        displayName:       user.displayName || "User",
+        avatar:            "avatar1",
+        solvedChallenges:  0
       };
       
-      // Still update UI even if Firestore fails
       authModal.classList.add("hidden");
       authButton.textContent = "Logout";
       authButton.setAttribute("data-state", "logout");
@@ -1513,8 +1494,8 @@ auth.onAuthStateChanged(async (user) => {
         try {
           await auth.signOut();
           console.log("User signed out successfully");
-        } catch (error) {
-          console.error("Error signing out:", error);
+        } catch (err) {
+          console.error("Error signing out:", err);
           alert("Failed to sign out. Please try again.");
         } finally {
           authButton.classList.remove("loading");
@@ -1522,8 +1503,6 @@ auth.onAuthStateChanged(async (user) => {
       };
       
       showSection("upload");
-      
-      // Show error to user
       alert("Warning: Could not load profile data. Some features may not work correctly.");
     }
     
@@ -1532,8 +1511,6 @@ auth.onAuthStateChanged(async (user) => {
     console.log("User not authenticated, showing login modal");
     
     currentUser = null;
-    
-    // Update auth button to show Login/Signup
     authButton.textContent = "Login / Signup";
     authButton.setAttribute("data-state", "login");
     authButton.onclick = () => {
@@ -1542,14 +1519,10 @@ auth.onAuthStateChanged(async (user) => {
       setAuthMode(true);
     };
     
-    // Automatically open login modal when not authenticated
     authModal.classList.remove("hidden");
     authModal.classList.add("show");
     setAuthMode(true);
-    
-    // Show upload section (which will prompt for login when needed)
     showSection("upload");
-    
     console.log("Login modal displayed for unauthenticated user");
   }
   
@@ -1559,6 +1532,7 @@ auth.onAuthStateChanged(async (user) => {
     console.log("Initial auth state resolved");
   }
 });
+
 
   // ─── Navigation Event Listeners ─────────────────────────────────────────────
   if (navUpload) {
